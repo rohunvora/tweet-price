@@ -8,6 +8,7 @@ import {
   CandlestickData,
   Time,
   CrosshairMode,
+  MouseEventParams,
 } from 'lightweight-charts';
 import { Timeframe, TweetEvent, Candle } from '@/lib/types';
 import { loadPrices, toCandlestickData } from '@/lib/dataLoader';
@@ -29,22 +30,28 @@ export default function Chart({ tweetEvents }: ChartProps) {
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const markersCanvasRef = useRef<HTMLCanvasElement | null>(null);
   
-  const [timeframe, setTimeframe] = useState<Timeframe>('1h');
+  // Default to 1D to show full history (user hasn't tweeted in 42+ days)
+  const [timeframe, setTimeframe] = useState<Timeframe>('1d');
   const [loading, setLoading] = useState(true);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [showBubbles, setShowBubbles] = useState(true);
   const [hoveredTweet, setHoveredTweet] = useState<TweetEvent | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   
   // Avatar cache
-  const avatarRef = useRef<HTMLImageElement | null>(null);
+  const avatarCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const defaultAvatarRef = useRef<HTMLImageElement | null>(null);
 
-  // Load avatar
+  // Load avatars
   useEffect(() => {
+    // Load default Alon avatar
     const img = new Image();
+    img.crossOrigin = 'anonymous';
     img.src = '/avatars/a1lon9.png';
     img.onload = () => {
-      avatarRef.current = img;
+      defaultAvatarRef.current = img;
+      drawMarkers();
     };
   }, []);
 
@@ -91,6 +98,9 @@ export default function Chart({ tweetEvents }: ChartProps) {
         borderColor: '#2A2E39',
         timeVisible: true,
         secondsVisible: false,
+        // Enable mouse wheel zoom on time axis
+        rightOffset: 5,
+        minBarSpacing: 0.5,
       },
       rightPriceScale: {
         borderColor: '#2A2E39',
@@ -98,6 +108,25 @@ export default function Chart({ tweetEvents }: ChartProps) {
           top: 0.1,
           bottom: 0.2,
         },
+      },
+      // Enable all interactions
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      handleScale: {
+        axisPressedMouseMove: {
+          time: true,
+          price: true,
+        },
+        axisDoubleClickReset: {
+          time: true,
+          price: true,
+        },
+        mouseWheel: true,
+        pinch: true,
       },
       localization: {
         priceFormatter: (price: number) => {
@@ -132,9 +161,19 @@ export default function Chart({ tweetEvents }: ChartProps) {
     });
     resizeObserver.observe(container);
 
-    // Redraw markers on visible range change
+    // Redraw markers on visible range change (zoom/pan)
     chart.timeScale().subscribeVisibleTimeRangeChange(() => {
       drawMarkers();
+    });
+
+    // Subscribe to crosshair move for hover detection
+    chart.subscribeCrosshairMove((param: MouseEventParams) => {
+      handleCrosshairMove(param);
+    });
+
+    // Subscribe to click events
+    chart.subscribeClick((param: MouseEventParams) => {
+      handleChartClick(param);
     });
 
     return () => {
@@ -143,131 +182,25 @@ export default function Chart({ tweetEvents }: ChartProps) {
     };
   }, []);
 
-  // Load data when timeframe changes
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      try {
-        const priceData = await loadPrices(timeframe);
-        setCandles(priceData.candles);
-        
-        if (seriesRef.current && chartRef.current) {
-          const chartData = toCandlestickData(priceData);
-          seriesRef.current.setData(chartData as CandlestickData<Time>[]);
-          chartRef.current.timeScale().fitContent();
-          
-          // Draw markers after data is set
-          setTimeout(() => drawMarkers(), 100);
-        }
-      } catch (error) {
-        console.error('Failed to load price data:', error);
-      }
-      setLoading(false);
-    }
-    loadData();
-  }, [timeframe]);
-
-  // Redraw markers when bubbles toggle changes
-  useEffect(() => {
-    drawMarkers();
-  }, [showBubbles, tweetEvents]);
-
-  // Draw tweet markers on canvas
-  const drawMarkers = useCallback(() => {
+  // Handle crosshair move to detect tweet marker hover
+  const handleCrosshairMove = useCallback((param: MouseEventParams) => {
     if (!chartRef.current || !seriesRef.current || !showBubbles) {
-      // Clear canvas if bubbles are off
-      const canvas = markersCanvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-      }
+      setHoveredTweet(null);
       return;
     }
 
-    const canvas = markersCanvasRef.current;
-    if (!canvas) return;
-
-    const container = containerRef.current;
-    if (!container) return;
-
-    // Set canvas size
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     const chart = chartRef.current;
     const series = seriesRef.current;
-    const avatar = avatarRef.current;
-
-    const BUBBLE_SIZE = 28;
-    const BUBBLE_RADIUS = BUBBLE_SIZE / 2;
-
-    // Get visible range
-    const visibleRange = chart.timeScale().getVisibleRange();
-    if (!visibleRange) return;
-
-    // Filter tweets in visible range with price data
-    const visibleTweets = tweetEvents.filter(tweet => {
-      if (!tweet.price_at_tweet) return false;
-      const time = tweet.timestamp;
-      return time >= (visibleRange.from as number) && time <= (visibleRange.to as number);
-    });
-
-    // Draw each tweet bubble
-    for (const tweet of visibleTweets) {
-      const x = chart.timeScale().timeToCoordinate(tweet.timestamp as Time);
-      const y = series.priceToCoordinate(tweet.price_at_tweet!);
-
-      if (x === null || y === null) continue;
-
-      // Draw white circle border
-      ctx.beginPath();
-      ctx.arc(x, y, BUBBLE_RADIUS + 2, 0, Math.PI * 2);
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Draw avatar or fallback
-      if (avatar) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(x, y, BUBBLE_RADIUS, 0, Math.PI * 2);
-        ctx.clip();
-        ctx.drawImage(
-          avatar,
-          x - BUBBLE_RADIUS,
-          y - BUBBLE_RADIUS,
-          BUBBLE_SIZE,
-          BUBBLE_SIZE
-        );
-        ctx.restore();
-      } else {
-        ctx.beginPath();
-        ctx.arc(x, y, BUBBLE_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = '#2962FF';
-        ctx.fill();
-      }
+    
+    if (!param.point) {
+      setHoveredTweet(null);
+      return;
     }
-  }, [tweetEvents, showBubbles]);
 
-  // Handle canvas mouse interaction
-  const handleCanvasMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!chartRef.current || !seriesRef.current) return;
+    const { x, y } = param.point;
+    setMousePos({ x, y });
 
-    const canvas = markersCanvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    const chart = chartRef.current;
-    const series = seriesRef.current;
-    const HOVER_RADIUS = 20;
+    const HOVER_RADIUS = 24;
 
     // Find hovered tweet
     let found: TweetEvent | null = null;
@@ -293,35 +226,252 @@ export default function Chart({ tweetEvents }: ChartProps) {
     if (found) {
       setHoveredTweet(found);
       setTooltipPos({ x: foundX, y: foundY });
-      canvas.style.cursor = 'pointer';
     } else {
       setHoveredTweet(null);
-      canvas.style.cursor = 'crosshair';
     }
+  }, [tweetEvents, showBubbles]);
+
+  // Handle chart click for opening tweet
+  const handleChartClick = useCallback((param: MouseEventParams) => {
+    if (!chartRef.current || !seriesRef.current || !showBubbles) return;
+
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    
+    if (!param.point) return;
+
+    const { x, y } = param.point;
+    const CLICK_RADIUS = 24;
+
+    for (const tweet of tweetEvents) {
+      if (!tweet.price_at_tweet) continue;
+
+      const tx = chart.timeScale().timeToCoordinate(tweet.timestamp as Time);
+      const ty = series.priceToCoordinate(tweet.price_at_tweet);
+
+      if (tx === null || ty === null) continue;
+
+      const dist = Math.hypot(tx - x, ty - y);
+      if (dist < CLICK_RADIUS) {
+        window.open(
+          `https://twitter.com/a1lon9/status/${tweet.tweet_id}`,
+          '_blank'
+        );
+        break;
+      }
+    }
+  }, [tweetEvents, showBubbles]);
+
+  // Load data when timeframe changes
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      try {
+        const priceData = await loadPrices(timeframe);
+        setCandles(priceData.candles);
+        
+        if (seriesRef.current && chartRef.current) {
+          const chartData = toCandlestickData(priceData);
+          seriesRef.current.setData(chartData as CandlestickData<Time>[]);
+          
+          // Smart initial positioning: show from first tweet with price to now
+          const tweetsWithPrice = tweetEvents.filter(t => t.price_at_tweet !== null);
+          if (tweetsWithPrice.length > 0 && priceData.candles.length > 0) {
+            const firstTweetTime = tweetsWithPrice[0].timestamp;
+            const lastDataTime = priceData.end;
+            
+            // Set visible range to show all tweets + current period
+            chartRef.current.timeScale().setVisibleRange({
+              from: firstTweetTime as Time,
+              to: lastDataTime as Time,
+            });
+          } else {
+            chartRef.current.timeScale().fitContent();
+          }
+          
+          // Draw markers after data is set
+          setTimeout(() => drawMarkers(), 100);
+        }
+      } catch (error) {
+        console.error('Failed to load price data:', error);
+      }
+      setLoading(false);
+    }
+    loadData();
+  }, [timeframe, tweetEvents]);
+
+  // Redraw markers when bubbles toggle changes
+  useEffect(() => {
+    drawMarkers();
+  }, [showBubbles, tweetEvents]);
+
+  // Draw tweet markers on canvas
+  const drawMarkers = useCallback(() => {
+    if (!chartRef.current || !seriesRef.current || !showBubbles) {
+      // Clear canvas if bubbles are off
+      const canvas = markersCanvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      return;
+    }
+
+    const canvas = markersCanvasRef.current;
+    if (!canvas) return;
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Set canvas size with device pixel ratio for sharp rendering
+    const dpr = window.devicePixelRatio || 1;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, width, height);
+
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const avatar = defaultAvatarRef.current;
+
+    const BUBBLE_SIZE = 28;
+    const BUBBLE_RADIUS = BUBBLE_SIZE / 2;
+
+    // Get visible range
+    const visibleRange = chart.timeScale().getVisibleRange();
+    if (!visibleRange) return;
+
+    // Filter tweets in visible range with price data
+    const visibleTweets = tweetEvents.filter(tweet => {
+      if (!tweet.price_at_tweet) return false;
+      const time = tweet.timestamp;
+      return time >= (visibleRange.from as number) && time <= (visibleRange.to as number);
+    });
+
+    // Draw each tweet bubble
+    for (const tweet of visibleTweets) {
+      const x = chart.timeScale().timeToCoordinate(tweet.timestamp as Time);
+      const y = series.priceToCoordinate(tweet.price_at_tweet!);
+
+      if (x === null || y === null) continue;
+
+      // Draw white circle border
+      ctx.beginPath();
+      ctx.arc(x, y, BUBBLE_RADIUS + 2, 0, Math.PI * 2);
+      ctx.strokeStyle = hoveredTweet?.tweet_id === tweet.tweet_id ? '#2962FF' : '#FFFFFF';
+      ctx.lineWidth = hoveredTweet?.tweet_id === tweet.tweet_id ? 3 : 2;
+      ctx.stroke();
+
+      // Draw avatar or fallback
+      if (avatar) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, BUBBLE_RADIUS, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(
+          avatar,
+          x - BUBBLE_RADIUS,
+          y - BUBBLE_RADIUS,
+          BUBBLE_SIZE,
+          BUBBLE_SIZE
+        );
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, BUBBLE_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = '#2962FF';
+        ctx.fill();
+      }
+    }
+  }, [tweetEvents, showBubbles, hoveredTweet]);
+
+  // Redraw when hovered tweet changes (for highlight effect)
+  useEffect(() => {
+    drawMarkers();
+  }, [hoveredTweet, drawMarkers]);
+
+  // Helper to jump to a specific time period
+  const jumpToLastTweet = useCallback(() => {
+    if (!chartRef.current || tweetEvents.length === 0) return;
+    
+    const tweetsWithPrice = tweetEvents.filter(t => t.price_at_tweet !== null);
+    if (tweetsWithPrice.length === 0) return;
+    
+    const lastTweet = tweetsWithPrice[tweetsWithPrice.length - 1];
+    const now = Math.floor(Date.now() / 1000);
+    
+    // Show 7 days before last tweet to now
+    const from = lastTweet.timestamp - (7 * 24 * 60 * 60);
+    const to = now;
+    
+    chartRef.current.timeScale().setVisibleRange({
+      from: from as Time,
+      to: to as Time,
+    });
   }, [tweetEvents]);
 
-  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (hoveredTweet) {
-      window.open(
-        `https://twitter.com/a1lon9/status/${hoveredTweet.tweet_id}`,
-        '_blank'
-      );
-    }
-  }, [hoveredTweet]);
+  const jumpToAllTime = useCallback(() => {
+    if (!chartRef.current) return;
+    chartRef.current.timeScale().fitContent();
+  }, []);
 
   return (
     <div className="relative w-full h-full bg-[#131722]">
-      {/* Chart container */}
+      {/* Chart container - receives all pointer events */}
       <div ref={containerRef} className="absolute inset-0" />
       
-      {/* Markers canvas overlay */}
+      {/* Markers canvas overlay - pointer-events NONE to allow chart interaction */}
       <canvas
         ref={markersCanvasRef}
-        className="absolute inset-0 pointer-events-auto"
-        onMouseMove={handleCanvasMouseMove}
-        onClick={handleCanvasClick}
-        style={{ zIndex: 10 }}
+        className="absolute inset-0"
+        style={{ 
+          zIndex: 10, 
+          pointerEvents: 'none'  // Critical: let events pass through to chart
+        }}
       />
+
+      {/* Top controls bar */}
+      <div className="absolute top-2 left-2 z-20 flex items-center gap-2">
+        {/* Bubble toggle */}
+        <button
+          onClick={() => setShowBubbles(!showBubbles)}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs transition-colors ${
+            showBubbles 
+              ? 'bg-[#2962FF] text-white' 
+              : 'bg-[#2A2E39] text-[#787B86] hover:text-[#D1D4DC]'
+          }`}
+        >
+          <span>🐦</span>
+          <span>{showBubbles ? 'Hide' : 'Show'} Tweets</span>
+        </button>
+
+        {/* Quick navigation buttons */}
+        <div className="flex items-center gap-1 ml-2">
+          <button
+            onClick={jumpToLastTweet}
+            className="px-2 py-1 text-xs text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39] rounded transition-colors"
+            title="Jump to last tweet period"
+          >
+            Last Tweet
+          </button>
+          <button
+            onClick={jumpToAllTime}
+            className="px-2 py-1 text-xs text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39] rounded transition-colors"
+            title="Show all data"
+          >
+            All Time
+          </button>
+        </div>
+      </div>
 
       {/* Timeframe selector - TradingView style at bottom */}
       <div className="absolute bottom-2 left-2 flex items-center gap-1 z-20">
@@ -338,6 +488,11 @@ export default function Chart({ tweetEvents }: ChartProps) {
             {tf.label}
           </button>
         ))}
+        
+        {/* Interaction hint */}
+        <span className="ml-3 text-[10px] text-[#555] select-none">
+          Drag to pan • Scroll to zoom • Double-click to reset
+        </span>
       </div>
 
       {/* Loading indicator */}
@@ -348,28 +503,28 @@ export default function Chart({ tweetEvents }: ChartProps) {
         </div>
       )}
 
-      {/* Bubble toggle */}
-      <div className="absolute top-2 left-2 z-20">
-        <button
-          onClick={() => setShowBubbles(!showBubbles)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs transition-colors ${
-            showBubbles 
-              ? 'bg-[#2962FF] text-white' 
-              : 'bg-[#2A2E39] text-[#787B86] hover:text-[#D1D4DC]'
-          }`}
+      {/* Cursor indicator when hovering tweet */}
+      {hoveredTweet && (
+        <div 
+          className="absolute z-15 pointer-events-none"
+          style={{
+            left: tooltipPos.x - 14,
+            top: tooltipPos.y - 14,
+            width: 28,
+            height: 28,
+          }}
         >
-          <span>🐦</span>
-          <span>{showBubbles ? 'Hide' : 'Show'} Tweets</span>
-        </button>
-      </div>
+          <div className="w-full h-full rounded-full border-2 border-[#2962FF] animate-pulse" />
+        </div>
+      )}
 
       {/* Tooltip */}
       {hoveredTweet && (
         <div
           className="absolute z-30 pointer-events-none bg-[#1E222D] border border-[#2A2E39] rounded-lg p-3 shadow-xl max-w-xs"
           style={{
-            left: Math.min(tooltipPos.x, (containerRef.current?.clientWidth || 400) - 280),
-            top: Math.max(tooltipPos.y - 120, 10),
+            left: Math.min(tooltipPos.x + 20, (containerRef.current?.clientWidth || 400) - 300),
+            top: Math.max(tooltipPos.y - 60, 10),
           }}
         >
           <div className="flex items-start gap-2 mb-2">
@@ -402,7 +557,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
             </div>
           )}
           <div className="mt-2 text-xs text-[#2962FF]">
-            Click to view tweet →
+            Click bubble to view tweet →
           </div>
         </div>
       )}
