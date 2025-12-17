@@ -34,10 +34,16 @@ export default function Chart({ tweetEvents, onTimeframeChange }: ChartProps) {
   // Initialize chart
   useEffect(() => {
     if (!containerRef.current) return;
+    
+    // Force explicit dimensions
+    const width = containerRef.current.clientWidth || 900;
+    const height = containerRef.current.clientHeight || 450;
+    console.log('Creating chart with dimensions:', width, height);
 
     const chart = createChart(containerRef.current, {
-      width: containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight || 450,
+      width,
+      height,
+      autoSize: true,
       layout: {
         background: { color: '#0D1117' },
         textColor: '#8B949E',
