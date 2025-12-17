@@ -1,0 +1,29 @@
+# Environment variables
+.env
+
+# Data files (can be large)
+data/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output
+*.html
+reports/
+
