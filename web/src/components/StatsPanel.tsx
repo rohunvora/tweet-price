@@ -4,10 +4,14 @@ import { Stats } from '@/lib/types';
 
 interface StatsPanelProps {
   stats: Stats;
+  founderName: string;
 }
 
-export default function StatsPanel({ stats }: StatsPanelProps) {
+export default function StatsPanel({ stats, founderName }: StatsPanelProps) {
   const { daily_comparison, correlation, current_status } = stats;
+  
+  // Capitalize first letter of founder name for display
+  const displayName = founderName.charAt(0).toUpperCase() + founderName.slice(1);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
@@ -49,7 +53,7 @@ export default function StatsPanel({ stats }: StatsPanelProps) {
       <div className="bg-[#161B22] border border-[#30363D] rounded-xl p-5">
         <h3 className="text-sm font-medium text-[#3FB950] mb-4 flex items-center gap-2">
           <span className="w-2 h-2 bg-[#3FB950] rounded-full"></span>
-          When Alon Tweets
+          When {displayName} Tweets
         </h3>
         <div className="space-y-3">
           <div className="flex justify-between items-baseline">
@@ -82,7 +86,7 @@ export default function StatsPanel({ stats }: StatsPanelProps) {
       <div className="bg-[#161B22] border border-[#30363D] rounded-xl p-5">
         <h3 className="text-sm font-medium text-[#F85149] mb-4 flex items-center gap-2">
           <span className="w-2 h-2 bg-[#F85149] rounded-full"></span>
-          When Alon is Silent
+          When {displayName} is Silent
         </h3>
         <div className="space-y-3">
           <div className="flex justify-between items-baseline">
@@ -149,4 +153,3 @@ export default function StatsPanel({ stats }: StatsPanelProps) {
     </div>
   );
 }
-

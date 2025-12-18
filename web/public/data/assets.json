@@ -1,0 +1,62 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2025-12-18T06:30:19.629352Z",
+  "assets": [
+    {
+      "id": "pump",
+      "name": "PUMP",
+      "founder": "a1lon9",
+      "network": "solana",
+      "launch_date": "2025-07-14T00:00:00Z",
+      "color": "#9945FF"
+    },
+    {
+      "id": "hype",
+      "name": "HYPE",
+      "founder": "chameleon_jeff",
+      "network": "hyperliquid",
+      "launch_date": "2024-11-29T00:00:00Z",
+      "color": "#00D1FF"
+    },
+    {
+      "id": "aster",
+      "name": "ASTER",
+      "founder": "cz_binance",
+      "network": "bnb",
+      "launch_date": "2025-09-21T00:00:00Z",
+      "color": "#F0B90B"
+    },
+    {
+      "id": "believe",
+      "name": "LAUNCHCOIN",
+      "founder": "pasternak",
+      "network": "solana",
+      "launch_date": "2025-01-28T00:00:00Z",
+      "color": "#FF6B6B"
+    },
+    {
+      "id": "jup",
+      "name": "JUP",
+      "founder": "weremeow",
+      "network": "solana",
+      "launch_date": "2024-01-31T00:00:00Z",
+      "color": "#19FB9B"
+    },
+    {
+      "id": "monad",
+      "name": "MONAD",
+      "founder": "keoneHD",
+      "network": "monad",
+      "launch_date": "2025-11-24T00:00:00Z",
+      "color": "#836EF9"
+    },
+    {
+      "id": "useless",
+      "name": "USELESS",
+      "founder": "theunipcs",
+      "network": "solana",
+      "launch_date": "2025-05-23T00:00:00Z",
+      "color": "#FF4081"
+    }
+  ]
+}

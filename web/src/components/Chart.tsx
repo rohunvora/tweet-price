@@ -10,7 +10,7 @@ import {
   CrosshairMode,
   MouseEventParams,
 } from 'lightweight-charts';
-import { Timeframe, TweetEvent, Candle } from '@/lib/types';
+import { Timeframe, TweetEvent, Candle, Asset } from '@/lib/types';
 import { loadPrices, toCandlestickData, getSortedTweetTimestamps } from '@/lib/dataLoader';
 import { formatTimeGap, formatPctChange } from '@/lib/formatters';
 
@@ -57,6 +57,7 @@ const TIMEFRAMES: { label: string; value: Timeframe }[] = [
 
 interface ChartProps {
   tweetEvents: TweetEvent[];
+  asset: Asset;
 }
 
 /** Internal representation of a tweet cluster for rendering */
@@ -84,7 +85,9 @@ interface TweetClusterDisplay {
  * - Silence gap annotations showing price change during tweet gaps
  * - Hover tooltips and click-to-open-tweet
  */
-export default function Chart({ tweetEvents }: ChartProps) {
+export default function Chart({ tweetEvents, asset }: ChartProps) {
+  console.log(`[Chart] Rendering ${asset.name} with ${tweetEvents.length} tweets`);
+  
   // ---------------------------------------------------------------------------
   // Refs
   // ---------------------------------------------------------------------------
@@ -101,6 +104,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
   const candleTimesRef = useRef<number[]>([]);
   const candlesRef = useRef<Candle[]>([]);
   const sortedTweetTimestampsRef = useRef<number[]>([]);
+  const assetRef = useRef(asset);
 
   // ---------------------------------------------------------------------------
   // State
@@ -119,6 +123,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
   useEffect(() => { tweetEventsRef.current = tweetEvents; }, [tweetEvents]);
   useEffect(() => { showBubblesRef.current = showBubbles; }, [showBubbles]);
   useEffect(() => { hoveredTweetRef.current = hoveredTweet; }, [hoveredTweet]);
+  useEffect(() => { assetRef.current = asset; }, [asset]);
   useEffect(() => {
     sortedTweetTimestampsRef.current = getSortedTweetTimestamps(tweetEvents);
   }, [tweetEvents]);
@@ -158,16 +163,18 @@ export default function Chart({ tweetEvents }: ChartProps) {
   useEffect(() => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.src = '/avatars/a1lon9.png';
+    img.src = `/avatars/${asset.founder}.png`;
     img.onload = () => {
+      console.log(`[Chart] Loaded avatar for ${asset.founder}`);
       avatarRef.current = img;
       setAvatarLoaded(true);
     };
     img.onerror = () => {
-      console.error('Failed to load avatar');
+      console.warn(`[Chart] Missing avatar for ${asset.founder}, using fallback`);
+      avatarRef.current = null;
       setAvatarLoaded(true);
     };
-  }, []);
+  }, [asset.founder]);
 
   // ---------------------------------------------------------------------------
   // Draw markers (clustering + gap annotations)
@@ -181,6 +188,10 @@ export default function Chart({ tweetEvents }: ChartProps) {
     const showTweets = showBubblesRef.current;
     const hovered = hoveredTweetRef.current;
     const avatar = avatarRef.current;
+    const currentAsset = assetRef.current;
+    const markerColor = currentAsset.color;
+    const markerGlow = `${markerColor}4D`; // 30% opacity
+    const markerMultipleGlow = `${markerColor}66`; // 40% opacity
 
     if (!canvas || !container) return;
 
@@ -324,7 +335,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
       if (isHovered) {
         ctx.beginPath();
         ctx.arc(x, y, bubbleRadius + 8, 0, Math.PI * 2);
-        ctx.fillStyle = COLORS.markerHoverGlow;
+        ctx.fillStyle = markerGlow;
         ctx.fill();
       }
 
@@ -332,14 +343,14 @@ export default function Chart({ tweetEvents }: ChartProps) {
       if (isMultiple) {
         ctx.beginPath();
         ctx.arc(x, y, bubbleRadius + 6, 0, Math.PI * 2);
-        ctx.fillStyle = COLORS.markerMultipleGlow;
+        ctx.fillStyle = markerMultipleGlow;
         ctx.fill();
       }
 
       // Border ring
       ctx.beginPath();
       ctx.arc(x, y, bubbleRadius + 2, 0, Math.PI * 2);
-      ctx.strokeStyle = isHovered ? COLORS.markerPrimary : '#FFFFFF';
+      ctx.strokeStyle = isHovered ? markerColor : '#FFFFFF';
       ctx.lineWidth = isHovered ? 3 : 2;
       ctx.stroke();
 
@@ -354,7 +365,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
       } else {
         ctx.beginPath();
         ctx.arc(x, y, bubbleRadius, 0, Math.PI * 2);
-        ctx.fillStyle = COLORS.markerPrimary;
+        ctx.fillStyle = markerColor;
         ctx.fill();
       }
 
@@ -366,7 +377,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
         
         ctx.beginPath();
         ctx.arc(badgeX, badgeY, badgeSize / 2 + 2, 0, Math.PI * 2);
-        ctx.fillStyle = COLORS.markerPrimary;
+        ctx.fillStyle = markerColor;
         ctx.fill();
         ctx.strokeStyle = '#FFFFFF';
         ctx.lineWidth = 1.5;
@@ -519,6 +530,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
       const { x, y } = param.point;
       const CLICK_RADIUS = 24;
       const tweets = tweetEventsRef.current;
+      const currentAsset = assetRef.current;
 
       for (const tweet of tweets) {
         if (!tweet.price_at_tweet) continue;
@@ -528,7 +540,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
         const ty = series.priceToCoordinate(tweet.price_at_tweet);
 
         if (tx !== null && ty !== null && Math.hypot(tx - x, ty - y) < CLICK_RADIUS) {
-          window.open(`https://twitter.com/a1lon9/status/${tweet.tweet_id}`, '_blank');
+          window.open(`https://twitter.com/${currentAsset.founder}/status/${tweet.tweet_id}`, '_blank');
           return;
         }
       }
@@ -548,8 +560,10 @@ export default function Chart({ tweetEvents }: ChartProps) {
       setLoading(true);
       setDataLoaded(false);
       
+      console.log(`[Chart] Loading ${timeframe} prices for ${asset.id}`);
+      
       try {
-        const priceData = await loadPrices(timeframe);
+        const priceData = await loadPrices(timeframe, asset.id);
         
         candlesRef.current = priceData.candles;
         candleTimesRef.current = priceData.candles.map(c => c.t);
@@ -571,12 +585,13 @@ export default function Chart({ tweetEvents }: ChartProps) {
           setDataLoaded(true);
         }
       } catch (error) {
-        console.error('Failed to load price data:', error);
+        console.error(`[Chart] Failed to load price data:`, error);
+        throw error; // Re-throw to bubble up - no fallbacks
       }
       setLoading(false);
     }
     loadData();
-  }, [timeframe, tweetEvents]);
+  }, [timeframe, tweetEvents, asset.id]);
 
   // ---------------------------------------------------------------------------
   // Redraw markers when state changes
@@ -664,9 +679,10 @@ export default function Chart({ tweetEvents }: ChartProps) {
             onClick={() => setTimeframe(tf.value)}
             className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
               timeframe === tf.value
-                ? 'bg-[#2962FF] text-white'
+                ? 'text-white'
                 : 'text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39]'
             }`}
+            style={timeframe === tf.value ? { backgroundColor: asset.color } : undefined}
           >
             {tf.label}
           </button>
@@ -685,8 +701,14 @@ export default function Chart({ tweetEvents }: ChartProps) {
           </div>
           <div className="flex items-center gap-1.5">
             <div className="relative">
-              <div className="w-3 h-3 rounded-full border border-white bg-[#2962FF]/40" />
-              <span className="absolute -top-0.5 -right-1 text-[7px] text-white font-bold bg-[#2962FF] rounded-full w-2.5 h-2.5 flex items-center justify-center">3</span>
+              <div 
+                className="w-3 h-3 rounded-full border border-white"
+                style={{ backgroundColor: `${asset.color}66` }}
+              />
+              <span 
+                className="absolute -top-0.5 -right-1 text-[7px] text-white font-bold rounded-full w-2.5 h-2.5 flex items-center justify-center"
+                style={{ backgroundColor: asset.color }}
+              >3</span>
             </div>
             <span className="text-[#D1D4DC]">Multiple tweets</span>
           </div>
@@ -700,8 +722,11 @@ export default function Chart({ tweetEvents }: ChartProps) {
       {/* Loading indicator */}
       {loading && (
         <div className="absolute top-14 right-2 z-20 flex items-center gap-2 bg-[#1E222D] px-3 py-1 rounded">
-          <div className="w-3 h-3 border-2 border-[#2962FF] border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs text-[#787B86]">Loading...</span>
+          <div 
+            className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"
+            style={{ borderColor: asset.color, borderTopColor: 'transparent' }}
+          />
+          <span className="text-xs text-[#787B86]">Loading {asset.name}...</span>
         </div>
       )}
 
@@ -715,9 +740,14 @@ export default function Chart({ tweetEvents }: ChartProps) {
           }}
         >
           <div className="flex items-start gap-2 mb-2">
-            <img src="/avatars/a1lon9.png" alt="Alon" className="w-8 h-8 rounded-full" />
+            <div 
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
+              style={{ backgroundColor: asset.color }}
+            >
+              {asset.founder.charAt(0).toUpperCase()}
+            </div>
             <div>
-              <div className="text-[#D1D4DC] font-medium text-sm">@a1lon9</div>
+              <div className="text-[#D1D4DC] font-medium text-sm">@{asset.founder}</div>
               <div className="text-[#787B86] text-xs">
                 {new Date(hoveredTweet.timestamp * 1000).toLocaleString()}
               </div>
@@ -741,7 +771,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
               )}
             </div>
           )}
-          <div className="mt-2 text-xs text-[#2962FF]">Click bubble to view tweet →</div>
+          <div className="mt-2 text-xs" style={{ color: asset.color }}>Click bubble to view tweet →</div>
         </div>
       )}
     </div>

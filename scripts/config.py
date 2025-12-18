@@ -21,8 +21,12 @@ RATE_LIMIT_DELAY = 1.1  # seconds between requests
 
 # Data paths
 DATA_DIR = PROJECT_ROOT / "data"
-TWEETS_FILE = DATA_DIR / "tweets.json"
-PRICES_DB = DATA_DIR / "prices.db"
+TWEETS_FILE = DATA_DIR / "tweets.json"  # Legacy - single asset
+PRICES_DB = DATA_DIR / "prices.db"      # Legacy - single asset
+
+# New unified database
+ANALYTICS_DB = DATA_DIR / "analytics.duckdb"
+ASSETS_FILE = PROJECT_ROOT / "scripts" / "assets.json"
 
 # Static output paths (for frontend)
 WEB_DIR = PROJECT_ROOT / "web"
@@ -32,7 +36,7 @@ AVATARS_DIR = WEB_DIR / "public" / "avatars"
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
 
-# PUMP pool configuration (found via DexScreener)
+# PUMP pool configuration (found via DexScreener) - Legacy, use assets.json instead
 PUMP_POOL_ADDRESS = "2uF4Xh61rDwxnG9woyxsVQP7zuA6kLFpb3NvnRQeoiSd"
 
 # Supported timeframes

@@ -1,0 +1,104 @@
+{
+  "$schema": "./assets.schema.json",
+  "version": "1.0.0",
+  "assets": [
+    {
+      "id": "pump",
+      "name": "PUMP",
+      "founder": "a1lon9",
+      "network": "solana",
+      "pool_address": "2uF4Xh61rDwxnG9woyxsVQP7zuA6kLFpb3NvnRQeoiSd",
+      "coingecko_id": null,
+      "price_source": "geckoterminal",
+      "launch_date": "2025-07-14T00:00:00Z",
+      "color": "#9945FF",
+      "enabled": true
+    },
+    {
+      "id": "hype",
+      "name": "HYPE",
+      "founder": "chameleon_jeff",
+      "network": "hyperliquid",
+      "pool_address": null,
+      "coingecko_id": "hyperliquid",
+      "price_source": "coingecko",
+      "launch_date": "2024-11-29T00:00:00Z",
+      "color": "#00D1FF",
+      "enabled": true
+    },
+    {
+      "id": "aster",
+      "name": "ASTER",
+      "founder": "cz_binance",
+      "network": "bnb",
+      "pool_address": null,
+      "coingecko_id": "aster-defi",
+      "price_source": "coingecko",
+      "launch_date": "2025-09-21T00:00:00Z",
+      "color": "#F0B90B",
+      "enabled": true
+    },
+    {
+      "id": "believe",
+      "name": "LAUNCHCOIN",
+      "founder": "pasternak",
+      "network": "solana",
+      "pool_address": null,
+      "coingecko_id": "launchcoin",
+      "price_source": "coingecko",
+      "launch_date": "2025-01-28T00:00:00Z",
+      "color": "#FF6B6B",
+      "enabled": true
+    },
+    {
+      "id": "jup",
+      "name": "JUP",
+      "founder": "weremeow",
+      "network": "solana",
+      "pool_address": "C1MgLojNLWBKADvu9BHdtgzz1oZX4dZ5zGdGcgvvW8Wz",
+      "coingecko_id": "jupiter-exchange-solana",
+      "price_source": "geckoterminal",
+      "launch_date": "2024-01-31T00:00:00Z",
+      "color": "#19FB9B",
+      "enabled": true
+    },
+    {
+      "id": "monad",
+      "name": "MONAD",
+      "founder": "keoneHD",
+      "network": "monad",
+      "pool_address": null,
+      "coingecko_id": "monad",
+      "price_source": "coingecko",
+      "launch_date": "2025-11-24T00:00:00Z",
+      "color": "#836EF9",
+      "enabled": true
+    },
+    {
+      "id": "useless",
+      "name": "USELESS",
+      "founder": "theunipcs",
+      "network": "solana",
+      "pool_address": "CsQvY5z2o8BfW2TbWoxb7hQPYkPdq51vmJbgfLWPbq21",
+      "coingecko_id": null,
+      "price_source": "geckoterminal",
+      "launch_date": "2025-05-23T00:00:00Z",
+      "color": "#FF4081",
+      "enabled": true
+    },
+    {
+      "id": "pengu",
+      "name": "PENGU",
+      "founder": "LucaNetz",
+      "network": "solana",
+      "pool_address": null,
+      "coingecko_id": "pudgy-penguins",
+      "price_source": "coingecko",
+      "launch_date": "2024-12-17T00:00:00Z",
+      "color": "#5B9BD5",
+      "enabled": false
+    }
+  ]
+}
+
+

@@ -105,3 +105,24 @@ export interface Stats {
 
 /** Available timeframe options for price data */
 export type Timeframe = '1m' | '15m' | '1h' | '1d';
+
+// =============================================================================
+// Asset Types
+// =============================================================================
+
+/** Single asset configuration */
+export interface Asset {
+  id: string;
+  name: string;
+  founder: string;
+  network: string | null;
+  color: string;
+  launch_date: string;
+  enabled: boolean;
+}
+
+/** Container for assets data */
+export interface AssetsData {
+  version: string;
+  assets: Asset[];
+}

@@ -1,0 +1,48 @@
+{
+  "asset_id": "pump",
+  "timeframe": "1m",
+  "chunks": [
+    {
+      "month": "2025-07",
+      "file": "prices_1m_2025-07.json",
+      "count": 3454,
+      "start": 1753760820,
+      "end": 1754020740
+    },
+    {
+      "month": "2025-08",
+      "file": "prices_1m_2025-08.json",
+      "count": 24173,
+      "start": 1754020800,
+      "end": 1756699140
+    },
+    {
+      "month": "2025-09",
+      "file": "prices_1m_2025-09.json",
+      "count": 22780,
+      "start": 1756699200,
+      "end": 1759290960
+    },
+    {
+      "month": "2025-10",
+      "file": "prices_1m_2025-10.json",
+      "count": 22442,
+      "start": 1759291260,
+      "end": 1761969480
+    },
+    {
+      "month": "2025-11",
+      "file": "prices_1m_2025-11.json",
+      "count": 19258,
+      "start": 1761969600,
+      "end": 1764565080
+    },
+    {
+      "month": "2025-12",
+      "file": "prices_1m_2025-12.json",
+      "count": 7923,
+      "start": 1764565260,
+      "end": 1766042280
+    }
+  ]
+}

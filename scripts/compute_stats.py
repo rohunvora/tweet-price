@@ -1,14 +1,26 @@
 """
 Compute pre-computed statistics for the frontend.
 All heavy computation happens here, not in the browser.
+
+Supports multi-asset statistics computation.
+
+Usage:
+    python compute_stats.py                 # Compute stats for all assets
+    python compute_stats.py --asset pump    # Compute stats for specific asset
 """
-from typing import List, Dict, Optional
+import argparse
 import json
-import sqlite3
-import numpy as np
 from datetime import datetime
-from scipy import stats
-from config import DATA_DIR, PRICES_DB, PUBLIC_DATA_DIR
+from typing import List, Dict, Any, Optional
+
+import numpy as np
+from scipy import stats as scipy_stats
+
+from config import DATA_DIR, PUBLIC_DATA_DIR
+from db import (
+    get_connection, init_schema, get_asset, get_enabled_assets,
+    get_tweet_events
+)
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -25,29 +37,49 @@ class NumpyEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def load_tweet_events() -> List[Dict]:
-    """Load aligned tweet events."""
-    path = DATA_DIR / "tweet_events.json"
-    with open(path) as f:
-        data = json.load(f)
-    return data.get("events", [])
-
-
-def load_daily_prices(conn: sqlite3.Connection) -> Dict[int, float]:
+def load_daily_prices(conn, asset_id: str) -> Dict[int, float]:
     """Load daily close prices as timestamp -> price map."""
     cursor = conn.execute("""
-        SELECT timestamp_epoch, close
-        FROM ohlcv
-        WHERE timeframe = '1d'
-        ORDER BY timestamp_epoch
-    """)
-    return {row[0]: row[1] for row in cursor}
+        SELECT timestamp, close
+        FROM prices
+        WHERE asset_id = ? AND timeframe = '1d'
+        ORDER BY timestamp
+    """, [asset_id])
+    
+    result = {}
+    for row in cursor.fetchall():
+        ts = row[0]
+        if hasattr(ts, 'timestamp'):
+            ts = int(ts.timestamp())
+        result[ts] = row[1]
+    
+    return result
+
+
+def compute_distribution(values: List[float]) -> Dict[str, Any]:
+    """Compute distribution statistics for a list of values."""
+    if not values:
+        return {}
+    
+    arr = np.array(values)
+    return {
+        "count": len(values),
+        "mean": round(float(np.mean(arr)), 2),
+        "median": round(float(np.median(arr)), 2),
+        "std_dev": round(float(np.std(arr)), 2),
+        "min": round(float(np.min(arr)), 2),
+        "max": round(float(np.max(arr)), 2),
+        "q1": round(float(np.percentile(arr, 25)), 2),
+        "q3": round(float(np.percentile(arr, 75)), 2),
+        "positive_count": int(np.sum(arr > 0)),
+        "negative_count": int(np.sum(arr < 0)),
+    }
 
 
 def compute_daily_stats(
     events: List[Dict],
     daily_prices: Dict[int, float]
-) -> Dict:
+) -> Dict[str, Any]:
     """
     Compute tweet day vs no-tweet day statistics.
     """
@@ -72,7 +104,7 @@ def compute_daily_stats(
         price = daily_prices[day]
         prev_price = daily_prices[prev_day]
         
-        if prev_price > 0:
+        if prev_price and prev_price > 0:
             ret = (price - prev_price) / prev_price * 100
             
             if day in tweet_days:
@@ -83,24 +115,42 @@ def compute_daily_stats(
     # Statistical test
     t_stat, p_value = None, None
     if len(tweet_day_returns) >= 5 and len(no_tweet_day_returns) >= 5:
-        t_stat, p_value = stats.ttest_ind(tweet_day_returns, no_tweet_day_returns)
+        t_stat, p_value = scipy_stats.ttest_ind(tweet_day_returns, no_tweet_day_returns)
+    
+    # Determine significance label
+    significant = p_value < 0.05 if p_value else False
+    if p_value:
+        if p_value < 0.01:
+            confidence_label = "strong"
+        elif p_value < 0.05:
+            confidence_label = "weak"
+        else:
+            confidence_label = "none"
+    else:
+        confidence_label = "insufficient_data"
     
     return {
         "tweet_day_count": len(tweet_day_returns),
         "tweet_day_avg_return": round(sum(tweet_day_returns) / len(tweet_day_returns), 2) if tweet_day_returns else 0,
         "tweet_day_win_rate": round(sum(1 for r in tweet_day_returns if r > 0) / len(tweet_day_returns) * 100, 1) if tweet_day_returns else 0,
+        "tweet_day_distribution": compute_distribution(tweet_day_returns),
         "no_tweet_day_count": len(no_tweet_day_returns),
         "no_tweet_day_avg_return": round(sum(no_tweet_day_returns) / len(no_tweet_day_returns), 2) if no_tweet_day_returns else 0,
         "no_tweet_day_win_rate": round(sum(1 for r in no_tweet_day_returns if r > 0) / len(no_tweet_day_returns) * 100, 1) if no_tweet_day_returns else 0,
+        "no_tweet_day_distribution": compute_distribution(no_tweet_day_returns),
         "t_statistic": round(t_stat, 3) if t_stat else None,
         "p_value": round(p_value, 4) if p_value else None,
-        "significant": p_value < 0.05 if p_value else False,
+        "significant": significant,
+        "confidence_label": confidence_label,
     }
 
 
-def compute_quiet_periods(events: List[Dict], min_gap_days: int = 3) -> List[Dict]:
+def compute_quiet_periods(
+    events: List[Dict], 
+    min_gap_days: int = 3
+) -> List[Dict]:
     """
-    Identify periods where Alon stopped tweeting.
+    Identify periods where the founder stopped tweeting.
     """
     if not events:
         return []
@@ -128,6 +178,7 @@ def compute_quiet_periods(events: List[Dict], min_gap_days: int = 3) -> List[Dic
         prev_ts = ts
     
     # Check if currently in quiet period
+    if sorted_events:
     last_ts = sorted_events[-1]["timestamp"]
     now_ts = int(datetime.utcnow().timestamp())
     gap_days = (now_ts - last_ts) / DAY
@@ -191,7 +242,7 @@ def compute_quiet_period_impact(
 def compute_correlation(
     events: List[Dict],
     daily_prices: Dict[int, float]
-) -> Dict:
+) -> Dict[str, Any]:
     """
     Compute correlation between 7-day tweet count and price.
     """
@@ -213,113 +264,233 @@ def compute_correlation(
     
     # Pearson correlation
     if len(rolling_counts) >= 10:
-        corr, p_val = stats.pearsonr(rolling_counts, prices)
+        corr, p_val = scipy_stats.pearsonr(rolling_counts, prices)
+        
+        # Determine strength label
+        abs_corr = abs(corr)
+        if abs_corr >= 0.7:
+            strength_label = "strong"
+        elif abs_corr >= 0.4:
+            strength_label = "moderate"
+        elif abs_corr >= 0.2:
+            strength_label = "weak"
+        else:
+            strength_label = "negligible"
+        
         return {
             "correlation_7d": round(corr, 3),
             "p_value": round(p_val, 4),
             "significant": p_val < 0.05,
             "sample_size": len(rolling_counts),
+            "strength_label": strength_label,
         }
     
     return {}
 
 
-def main():
-    """Compute and save all statistics."""
-    print("=" * 60)
-    print("Computing Statistics")
-    print("=" * 60)
+def compute_limitations(
+    daily_stats: Dict,
+    events: List[Dict],
+    daily_prices: Dict[int, float]
+) -> Dict[str, Any]:
+    """Compute data limitations and warnings."""
+    notes = []
+    
+    tweet_day_count = daily_stats.get("tweet_day_count", 0)
+    p_value = daily_stats.get("p_value")
+    
+    sample_warning = tweet_day_count < 100
+    borderline = p_value and 0.04 < p_value < 0.06
+    short_history = len(daily_prices) < 365
+    
+    if sample_warning:
+        notes.append(f"Small sample: only {tweet_day_count} tweet-days analyzed")
+    
+    if borderline:
+        notes.append(f"Borderline significance: p={p_value} is very close to 0.05 threshold")
+    
+    if short_history:
+        notes.append(f"Limited history: {len(daily_prices)} days may not capture full market cycles")
+    
+    win_rate = daily_stats.get("tweet_day_win_rate", 50)
+    if 45 <= win_rate <= 55:
+        notes.append(f"Win rate of {win_rate}% is near random (50%)")
+    
+    notes.append("Correlation does not imply causation")
+    
+    return {
+        "sample_size_warning": sample_warning,
+        "borderline_significance": borderline,
+        "short_history": short_history,
+        "notes": notes,
+    }
+
+
+def compute_stats_for_asset(asset_id: str) -> Dict[str, Any]:
+    """Compute all statistics for a single asset."""
+    conn = get_connection()
+    init_schema(conn)
+    
+    asset = get_asset(conn, asset_id)
+    if not asset:
+        conn.close()
+        return {"error": f"Asset '{asset_id}' not found"}
+    
+    print(f"\nComputing stats for {asset['name']} ({asset_id})...")
+    
+    # Check if we have 1m data
+    has_1m = conn.execute("""
+        SELECT COUNT(*) FROM prices 
+        WHERE asset_id = ? AND timeframe = '1m'
+    """, [asset_id]).fetchone()[0] > 0
     
     # Load data
-    print("\nLoading data...")
-    events = load_tweet_events()
-    print(f"  Tweet events: {len(events)}")
+    events = get_tweet_events(conn, asset_id, use_daily_fallback=not has_1m)
+    daily_prices = load_daily_prices(conn, asset_id)
     
-    conn = sqlite3.connect(PRICES_DB)
-    daily_prices = load_daily_prices(conn)
-    print(f"  Daily prices: {len(daily_prices)}")
-    conn.close()
+    print(f"    Tweet events: {len(events)}")
+    print(f"    Daily prices: {len(daily_prices)}")
     
     if not events or not daily_prices:
-        print("Missing data, cannot compute stats")
-        return
+        conn.close()
+        return {"error": "Missing data", "events": len(events), "prices": len(daily_prices)}
     
     # Compute all stats
-    print("\nComputing tweet day vs no-tweet day stats...")
+    print("    Computing tweet day vs no-tweet day stats...")
     daily_stats = compute_daily_stats(events, daily_prices)
     
-    print("Computing quiet periods...")
+    print("    Computing quiet periods...")
     quiet_periods = compute_quiet_periods(events)
     quiet_with_impact = compute_quiet_period_impact(quiet_periods, daily_prices)
     
-    print("Computing correlations...")
+    print("    Computing correlations...")
     correlation = compute_correlation(events, daily_prices)
     
     # Find current status
     current_quiet = next((q for q in quiet_with_impact if q.get("is_current")), None)
     
+    # Compute limitations
+    limitations = compute_limitations(daily_stats, events, daily_prices)
+    
+    # Get date range
+    sorted_events = sorted(events, key=lambda x: x["timestamp"])
+    
     # Assemble final stats
     stats_output = {
         "generated_at": datetime.utcnow().isoformat() + "Z",
+        "asset": asset_id,
+        "asset_name": asset["name"],
+        "founder": asset["founder"],
         "summary": {
             "total_tweets": len(events),
             "tweets_with_price": sum(1 for e in events if e.get("price_at_tweet")),
             "date_range": {
-                "start": events[0]["timestamp_iso"][:10] if events else None,
-                "end": events[-1]["timestamp_iso"][:10] if events else None,
-            }
+                "start": sorted_events[0]["timestamp_iso"][:10] if sorted_events else None,
+                "end": sorted_events[-1]["timestamp_iso"][:10] if sorted_events else None,
+            },
+            "total_days_analyzed": len(daily_prices),
         },
         "daily_comparison": daily_stats,
         "correlation": correlation,
         "current_status": {
             "days_since_last_tweet": int(current_quiet["gap_days"]) if current_quiet else 0,
             "price_change_during_silence": current_quiet["change_pct"] if current_quiet else None,
-            "last_tweet_date": current_quiet["start_date"] if current_quiet else None,
-        } if current_quiet else {
-            "days_since_last_tweet": 0,
-            "price_change_during_silence": None,
-            "last_tweet_date": events[-1]["timestamp_iso"][:10] if events else None,
+            "last_tweet_date": current_quiet["start_date"] if current_quiet else (
+                sorted_events[-1]["timestamp_iso"][:10] if sorted_events else None
+            ),
         },
+        "limitations": limitations,
         "quiet_periods": quiet_with_impact,
     }
     
+    conn.close()
+    return stats_output
+
+
+def save_stats(stats: Dict[str, Any], asset_id: str):
+    """Save stats to JSON files."""
     # Save to data directory
-    output_path = DATA_DIR / "stats.json"
+    output_path = DATA_DIR / asset_id / "stats.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
     with open(output_path, "w") as f:
-        json.dump(stats_output, f, indent=2, cls=NumpyEncoder)
-    print(f"\nSaved stats to {output_path}")
+        json.dump(stats, f, indent=2, cls=NumpyEncoder)
+    print(f"    Saved to {output_path}")
     
-    # Also save to public directory
-    PUBLIC_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    public_path = PUBLIC_DATA_DIR / "stats.json"
+    # Save to public directory
+    public_path = PUBLIC_DATA_DIR / asset_id / "stats.json"
+    public_path.parent.mkdir(parents=True, exist_ok=True)
+    
     with open(public_path, "w") as f:
-        json.dump(stats_output, f, indent=2, cls=NumpyEncoder)
-    print(f"Saved stats to {public_path}")
+        json.dump(stats, f, indent=2, cls=NumpyEncoder)
+    print(f"    Saved to {public_path}")
+
+
+def print_stats_summary(stats: Dict[str, Any]):
+    """Print a summary of computed stats."""
+    if "error" in stats:
+        print(f"    Error: {stats['error']}")
+        return
     
-    # Print summary
-    print("\n" + "=" * 60)
-    print("STATISTICS SUMMARY")
+    daily = stats.get("daily_comparison", {})
+    corr = stats.get("correlation", {})
+    current = stats.get("current_status", {})
+    
+    print(f"\n    Tweet Days: {daily.get('tweet_day_count', 0)} days")
+    print(f"      Avg Return: {daily.get('tweet_day_avg_return', 0):+.2f}%")
+    print(f"      Win Rate: {daily.get('tweet_day_win_rate', 0):.1f}%")
+    
+    print(f"\n    No-Tweet Days: {daily.get('no_tweet_day_count', 0)} days")
+    print(f"      Avg Return: {daily.get('no_tweet_day_avg_return', 0):+.2f}%")
+    print(f"      Win Rate: {daily.get('no_tweet_day_win_rate', 0):.1f}%")
+    
+    sig = "YES" if daily.get("significant") else "NO"
+    p_val = daily.get("p_value", "N/A")
+    print(f"\n    Statistical Significance: {sig} (p={p_val})")
+    
+    if corr:
+        print(f"\n    Correlation (7d tweets vs price): {corr.get('correlation_7d', 'N/A')}")
+    
+    if current.get("days_since_last_tweet", 0) > 0:
+        print(f"\n    Current Silence: {current['days_since_last_tweet']} days")
+        if current.get("price_change_during_silence"):
+            print(f"    Price Impact: {current['price_change_during_silence']:+.1f}%")
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Compute statistics for assets"
+    )
+    parser.add_argument(
+        "--asset", "-a",
+        type=str,
+        help="Specific asset ID (default: all enabled assets)"
+    )
+    
+    args = parser.parse_args()
+    
     print("=" * 60)
-    print(f"\nTweet Days:")
-    print(f"  Count: {daily_stats['tweet_day_count']}")
-    print(f"  Avg Return: {daily_stats['tweet_day_avg_return']:+.2f}%")
-    print(f"  Win Rate: {daily_stats['tweet_day_win_rate']:.1f}%")
+    print("Computing Statistics")
+    print("=" * 60)
     
-    print(f"\nNo-Tweet Days:")
-    print(f"  Count: {daily_stats['no_tweet_day_count']}")
-    print(f"  Avg Return: {daily_stats['no_tweet_day_avg_return']:+.2f}%")
-    print(f"  Win Rate: {daily_stats['no_tweet_day_win_rate']:.1f}%")
-    
-    print(f"\nStatistical Significance: {'YES' if daily_stats['significant'] else 'NO'} (p={daily_stats['p_value']})")
-    
-    if correlation:
-        print(f"\nCorrelation (7d tweets vs price): {correlation['correlation_7d']}")
-    
-    if current_quiet:
-        print(f"\nCurrent Silence: {int(current_quiet['gap_days'])} days")
-        print(f"Price Impact: {current_quiet['change_pct']:+.1f}%")
+    if args.asset:
+        stats = compute_stats_for_asset(args.asset)
+        if "error" not in stats:
+            save_stats(stats, args.asset)
+        print_stats_summary(stats)
+    else:
+        conn = get_connection()
+        init_schema(conn)
+        assets = get_enabled_assets(conn)
+        conn.close()
+        
+        for asset in assets:
+            stats = compute_stats_for_asset(asset["id"])
+            if "error" not in stats:
+                save_stats(stats, asset["id"])
+            print_stats_summary(stats)
 
 
 if __name__ == "__main__":
     main()
-
