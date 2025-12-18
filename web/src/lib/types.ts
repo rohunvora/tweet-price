@@ -95,3 +95,16 @@ export interface TweetMarker {
   tweet: TweetEvent;
 }
 
+// Clustered tweets by timeframe window
+export interface TweetCluster {
+  startTime: number;      // Start of the time window
+  endTime: number;        // End of the time window
+  tweets: TweetEvent[];   // All tweets in this window
+  count: number;          // Number of tweets
+  candleHigh: number;     // High price of the candle (for positioning)
+  candleLow: number;      // Low price of the candle
+  periodChange: number;   // Price change during this period (%)
+  gapToNext: number | null;     // Seconds until next cluster
+  gapChange: number | null;     // Price change during gap (%)
+}
+

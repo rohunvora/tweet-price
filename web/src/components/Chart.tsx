@@ -10,21 +10,12 @@ import {
   CrosshairMode,
   MouseEventParams,
 } from 'lightweight-charts';
-import { Timeframe, TweetEvent, Candle } from '@/lib/types';
-import { 
-  loadPrices, 
-  loadSolPrices,
-  toCandlestickData, 
-  getSortedTweetTimestamps,
-  findClosestSolCandle,
-  calculateReturn,
-} from '@/lib/dataLoader';
-import { 
-  calculateNormalizedAlpha,
-  interpolateColor, 
-  getAlphaLabel,
-  ALPHA_GRADIENT 
-} from '@/lib/heatCalculator';
+import { Timeframe, TweetEvent, Candle, TweetCluster } from '@/lib/types';
+import { loadPrices, toCandlestickData } from '@/lib/dataLoader';
+
+// Twitter blue color
+const TWITTER_BLUE = '#1DA1F2';
+const MARKER_OFFSET = 20; // pixels above candle high
 
 interface ChartProps {
   tweetEvents: TweetEvent[];
@@ -37,44 +28,42 @@ const TIMEFRAMES: { label: string; value: Timeframe }[] = [
   { label: '1D', value: '1d' },
 ];
 
+// Timeframe durations in seconds
+const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
+  '1m': 60,
+  '15m': 15 * 60,
+  '1h': 60 * 60,
+  '1d': 24 * 60 * 60,
+};
+
 export default function Chart({ tweetEvents }: ChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const markersCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const alphaCanvasRef = useRef<HTMLCanvasElement | null>(null);
   
   // Default to 1D to show full history
   const [timeframe, setTimeframe] = useState<Timeframe>('1d');
   const [loading, setLoading] = useState(true);
   const [showBubbles, setShowBubbles] = useState(true);
-  const [showAlpha, setShowAlpha] = useState(true);
-  const [hoveredTweet, setHoveredTweet] = useState<TweetEvent | null>(null);
+  const [hoveredCluster, setHoveredCluster] = useState<TweetCluster | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [currentAlpha, setCurrentAlpha] = useState<number>(0);
-  const [showMethodology, setShowMethodology] = useState(false);
   
   // Store latest values in refs to avoid stale closures
   const tweetEventsRef = useRef(tweetEvents);
   const showBubblesRef = useRef(showBubbles);
-  const showAlphaRef = useRef(showAlpha);
-  const hoveredTweetRef = useRef(hoveredTweet);
+  const hoveredClusterRef = useRef(hoveredCluster);
   const candleTimesRef = useRef<number[]>([]);
   const candlesRef = useRef<Candle[]>([]);
-  const solCandlesRef = useRef<Candle[]>([]);
-  const sortedTweetTimestampsRef = useRef<number[]>([]);
+  const clustersRef = useRef<TweetCluster[]>([]);
+  const timeframeRef = useRef<Timeframe>(timeframe);
   
   // Keep refs in sync
   useEffect(() => { tweetEventsRef.current = tweetEvents; }, [tweetEvents]);
   useEffect(() => { showBubblesRef.current = showBubbles; }, [showBubbles]);
-  useEffect(() => { showAlphaRef.current = showAlpha; }, [showAlpha]);
-  useEffect(() => { hoveredTweetRef.current = hoveredTweet; }, [hoveredTweet]);
-  
-  // Compute sorted tweet timestamps
-  useEffect(() => {
-    sortedTweetTimestampsRef.current = getSortedTweetTimestamps(tweetEvents);
-  }, [tweetEvents]);
+  useEffect(() => { hoveredClusterRef.current = hoveredCluster; }, [hoveredCluster]);
+  useEffect(() => { timeframeRef.current = timeframe; }, [timeframe]);
   
   // Avatar
   const avatarRef = useRef<HTMLImageElement | null>(null);
@@ -95,137 +84,123 @@ export default function Chart({ tweetEvents }: ChartProps) {
     };
   }, []);
 
-  // Draw alpha-colored price line (market-relative performance)
-  const drawAlphaLine = useCallback(() => {
-    const chart = chartRef.current;
-    const series = seriesRef.current;
-    const canvas = alphaCanvasRef.current;
-    const container = containerRef.current;
-    const candles = candlesRef.current;
-    const solCandles = solCandlesRef.current;
-    const showAlphaVal = showAlphaRef.current;
-
-    if (!canvas || !container || !chart || !series || !showAlphaVal) {
-      if (canvas && container) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          const dpr = window.devicePixelRatio || 1;
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          ctx.clearRect(0, 0, container.clientWidth, container.clientHeight);
+  /**
+   * Cluster tweets by timeframe window
+   * Each candle period groups all tweets within it
+   */
+  const clusterTweetsByTimeframe = useCallback((
+    tweets: TweetEvent[],
+    candles: Candle[],
+    tf: Timeframe
+  ): TweetCluster[] => {
+    if (candles.length === 0 || tweets.length === 0) return [];
+    
+    const windowSeconds = TIMEFRAME_SECONDS[tf];
+    const clusters: TweetCluster[] = [];
+    
+    // Create a map of candle start time -> candle
+    const candleMap = new Map<number, Candle>();
+    for (const candle of candles) {
+      candleMap.set(candle.t, candle);
+    }
+    
+    // Group tweets by their candle window
+    const tweetsByWindow = new Map<number, TweetEvent[]>();
+    
+    for (const tweet of tweets) {
+      if (tweet.price_at_tweet === null) continue;
+      
+      // Find which candle window this tweet falls into
+      const windowStart = Math.floor(tweet.timestamp / windowSeconds) * windowSeconds;
+      
+      if (!tweetsByWindow.has(windowStart)) {
+        tweetsByWindow.set(windowStart, []);
+      }
+      tweetsByWindow.get(windowStart)!.push(tweet);
+    }
+    
+    // Convert to clusters
+    const sortedWindows = Array.from(tweetsByWindow.keys()).sort((a, b) => a - b);
+    
+    for (let i = 0; i < sortedWindows.length; i++) {
+      const windowStart = sortedWindows[i];
+      const windowTweets = tweetsByWindow.get(windowStart)!;
+      
+      // Find the candle for this window (or closest one)
+      let candle = candleMap.get(windowStart);
+      if (!candle) {
+        // Find closest candle
+        let minDiff = Infinity;
+        for (const c of candles) {
+          const diff = Math.abs(c.t - windowStart);
+          if (diff < minDiff) {
+            minDiff = diff;
+            candle = c;
+          }
         }
       }
-      return;
-    }
-
-    const dpr = window.devicePixelRatio || 1;
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const visibleRange = chart.timeScale().getVisibleRange();
-    if (!visibleRange) return;
-
-    const rangeFrom = visibleRange.from as number;
-    const rangeTo = visibleRange.to as number;
-
-    const padding = (rangeTo - rangeFrom) * 0.1;
-    const visibleCandles = candles.filter(c => 
-      c.t >= rangeFrom - padding && c.t <= rangeTo + padding
-    );
-
-    if (visibleCandles.length < 2 || solCandles.length < 2) return;
-
-    // Determine lookback window based on timeframe
-    // Use ~24h worth of data for smoothing
-    const lookbackCandles = timeframe === '1m' ? 60 : 
-                            timeframe === '15m' ? 4 : 
-                            timeframe === '1h' ? 1 : 1;
-
-    const DOT_SIZE = 3;
-    
-    // Draw alpha-colored line
-    for (let i = lookbackCandles; i < visibleCandles.length; i++) {
-      const curr = visibleCandles[i];
-      const prev = visibleCandles[i - lookbackCandles];
       
-      const x = chart.timeScale().timeToCoordinate(curr.t as Time);
-      const y = series.priceToCoordinate(curr.c);
-
-      if (x === null || y === null) continue;
-
-      // Find corresponding SOL candles
-      const currSol = findClosestSolCandle(curr.t, solCandles, 300);
-      const prevSol = findClosestSolCandle(prev.t, solCandles, 300);
-
-      if (!currSol || !prevSol) continue;
-
-      // Calculate returns
-      const pumpReturn = calculateReturn(curr.c, prev.c);
-      const solReturn = calculateReturn(currSol.c, prevSol.c);
-
-      // Calculate normalized alpha for color
-      const normalizedAlpha = calculateNormalizedAlpha(pumpReturn, solReturn, 0.10);
-      const color = interpolateColor(normalizedAlpha);
-
-      // Draw dot
-      ctx.beginPath();
-      ctx.arc(x, y, DOT_SIZE, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
+      if (!candle) continue;
+      
+      // Calculate period change (open to close of the candle)
+      const periodChange = candle.o !== 0 ? ((candle.c - candle.o) / candle.o) * 100 : 0;
+      
+      // Calculate gap to next cluster
+      const nextWindowStart = sortedWindows[i + 1];
+      const gapToNext = nextWindowStart ? nextWindowStart - windowStart : null;
+      
+      // Calculate price change during gap (from this candle's close to next cluster's candle open)
+      let gapChange: number | null = null;
+      if (nextWindowStart) {
+        const nextCandle = candleMap.get(nextWindowStart);
+        if (nextCandle && candle.c !== 0) {
+          gapChange = ((nextCandle.o - candle.c) / candle.c) * 100;
+        }
+      }
+      
+      clusters.push({
+        startTime: windowStart,
+        endTime: windowStart + windowSeconds,
+        tweets: windowTweets,
+        count: windowTweets.length,
+        candleHigh: candle.h,
+        candleLow: candle.l,
+        periodChange,
+        gapToNext,
+        gapChange,
+      });
     }
+    
+    return clusters;
+  }, []);
 
-    // Draw connecting lines
-    ctx.lineWidth = 2;
-    for (let i = lookbackCandles + 1; i < visibleCandles.length; i++) {
-      const prev = visibleCandles[i - 1];
-      const curr = visibleCandles[i];
-      const lookback = visibleCandles[i - lookbackCandles];
+  /**
+   * Format duration in human readable form
+   */
+  const formatDuration = (seconds: number): string => {
+    const days = Math.floor(seconds / (24 * 60 * 60));
+    const hours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
+    const minutes = Math.floor((seconds % (60 * 60)) / 60);
+    
+    if (days > 0) return `${days}d`;
+    if (hours > 0) return `${hours}h`;
+    if (minutes > 0) return `${minutes}m`;
+    return '<1m';
+  };
 
-      const x1 = chart.timeScale().timeToCoordinate(prev.t as Time);
-      const y1 = series.priceToCoordinate(prev.c);
-      const x2 = chart.timeScale().timeToCoordinate(curr.t as Time);
-      const y2 = series.priceToCoordinate(curr.c);
-
-      if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
-
-      const currSol = findClosestSolCandle(curr.t, solCandles, 300);
-      const lookbackSol = findClosestSolCandle(lookback.t, solCandles, 300);
-
-      if (!currSol || !lookbackSol) continue;
-
-      const pumpReturn = calculateReturn(curr.c, lookback.c);
-      const solReturn = calculateReturn(currSol.c, lookbackSol.c);
-      const normalizedAlpha = calculateNormalizedAlpha(pumpReturn, solReturn, 0.10);
-      const color = interpolateColor(normalizedAlpha);
-
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.strokeStyle = color;
-      ctx.stroke();
-    }
-  }, [timeframe]);
-
-  // Draw tweet markers
+  /**
+   * Draw tweet markers (clusters or individual bubbles)
+   */
   const drawMarkers = useCallback(() => {
     const chart = chartRef.current;
     const series = seriesRef.current;
     const canvas = markersCanvasRef.current;
     const container = containerRef.current;
-    const tweets = tweetEventsRef.current;
+    const clusters = clustersRef.current;
     const showTweets = showBubblesRef.current;
-    const hovered = hoveredTweetRef.current;
+    const hovered = hoveredClusterRef.current;
     const avatar = avatarRef.current;
+    const tf = timeframeRef.current;
 
     if (!canvas || !container) return;
 
@@ -244,62 +219,199 @@ export default function Chart({ tweetEvents }: ChartProps) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    if (!chart || !series || !showTweets) return;
-
-    const BUBBLE_SIZE = 32;
-    const BUBBLE_RADIUS = BUBBLE_SIZE / 2;
+    if (!chart || !series || !showTweets || clusters.length === 0) return;
 
     const visibleRange = chart.timeScale().getVisibleRange();
     if (!visibleRange) return;
 
-    const visibleTweets = tweets.filter(tweet => {
-      if (!tweet.price_at_tweet) return false;
-      const time = tweet.timestamp;
-      return time >= (visibleRange.from as number) && time <= (visibleRange.to as number);
-    });
+    const rangeFrom = visibleRange.from as number;
+    const rangeTo = visibleRange.to as number;
 
-    for (const tweet of visibleTweets) {
-      const nearestTime = findNearestCandleTime(tweet.timestamp);
-      const x = nearestTime ? chart.timeScale().timeToCoordinate(nearestTime as Time) : null;
-      const y = series.priceToCoordinate(tweet.price_at_tweet!);
+    // Filter to visible clusters
+    const visibleClusters = clusters.filter(cluster => 
+      cluster.startTime >= rangeFrom && cluster.startTime <= rangeTo
+    );
 
-      if (x === null || y === null) continue;
-
-      const isHovered = hovered?.tweet_id === tweet.tweet_id;
-
-      if (isHovered) {
-        ctx.beginPath();
-        ctx.arc(x, y, BUBBLE_RADIUS + 6, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(41, 98, 255, 0.3)';
-        ctx.fill();
-      }
-
+    // Draw gap lines first (behind markers)
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    
+    for (let i = 0; i < visibleClusters.length - 1; i++) {
+      const current = visibleClusters[i];
+      const next = visibleClusters[i + 1];
+      
+      const x1 = chart.timeScale().timeToCoordinate(current.startTime as Time);
+      const y1 = series.priceToCoordinate(current.candleHigh);
+      const x2 = chart.timeScale().timeToCoordinate(next.startTime as Time);
+      const y2 = series.priceToCoordinate(next.candleHigh);
+      
+      if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+      
+      // Adjust y positions to be above the candle
+      const y1Adj = y1 - MARKER_OFFSET;
+      const y2Adj = y2 - MARKER_OFFSET;
+      
+      // Draw connecting line
+      const gapChange = current.gapChange ?? 0;
+      ctx.strokeStyle = gapChange >= 0 ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)';
       ctx.beginPath();
-      ctx.arc(x, y, BUBBLE_RADIUS + 2, 0, Math.PI * 2);
-      ctx.strokeStyle = isHovered ? '#2962FF' : '#FFFFFF';
-      ctx.lineWidth = isHovered ? 3 : 2;
+      ctx.moveTo(x1, y1Adj);
+      ctx.lineTo(x2, y2Adj);
       ctx.stroke();
-
-      if (avatar) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(x, y, BUBBLE_RADIUS, 0, Math.PI * 2);
-        ctx.clip();
-        ctx.drawImage(avatar, x - BUBBLE_RADIUS, y - BUBBLE_RADIUS, BUBBLE_SIZE, BUBBLE_SIZE);
-        ctx.restore();
-      } else {
-        ctx.beginPath();
-        ctx.arc(x, y, BUBBLE_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = '#2962FF';
-        ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 14px sans-serif';
+      
+      // Draw gap label at midpoint (only if there's enough space)
+      const midX = (x1 + x2) / 2;
+      const midY = (y1Adj + y2Adj) / 2 - 10;
+      const gapDuration = current.gapToNext ?? 0;
+      
+      if (Math.abs(x2 - x1) > 60 && gapDuration > 0) {
+        const durationStr = formatDuration(gapDuration);
+        const changeStr = `${gapChange >= 0 ? '+' : ''}${gapChange.toFixed(1)}%`;
+        
+        ctx.font = '10px system-ui, sans-serif';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('A', x, y);
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#787B86';
+        ctx.fillText(`${durationStr}`, midX, midY);
+        ctx.fillStyle = gapChange >= 0 ? '#26A69A' : '#EF5350';
+        ctx.fillText(changeStr, midX, midY + 12);
       }
     }
-  }, []);
+    
+    ctx.setLineDash([]);
+    
+    // Draw markers
+    for (const cluster of visibleClusters) {
+      const x = chart.timeScale().timeToCoordinate(cluster.startTime as Time);
+      const y = series.priceToCoordinate(cluster.candleHigh);
+      
+      if (x === null || y === null) continue;
+      
+      // Position marker above the candle high
+      const yPos = y - MARKER_OFFSET;
+      
+      const isHovered = hovered?.startTime === cluster.startTime;
+      
+      if (cluster.count === 1) {
+        // Single tweet: Draw avatar bubble
+        const BUBBLE_SIZE = 24;
+        const BUBBLE_RADIUS = BUBBLE_SIZE / 2;
+        
+        // Hover highlight
+        if (isHovered) {
+          ctx.beginPath();
+          ctx.arc(x, yPos, BUBBLE_RADIUS + 6, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(29, 161, 242, 0.3)';
+          ctx.fill();
+        }
+        
+        // Border
+        ctx.beginPath();
+        ctx.arc(x, yPos, BUBBLE_RADIUS + 2, 0, Math.PI * 2);
+        ctx.strokeStyle = isHovered ? TWITTER_BLUE : '#FFFFFF';
+        ctx.lineWidth = isHovered ? 3 : 2;
+        ctx.stroke();
+        
+        // Avatar or fallback
+        if (avatar) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(x, yPos, BUBBLE_RADIUS, 0, Math.PI * 2);
+          ctx.clip();
+          ctx.drawImage(avatar, x - BUBBLE_RADIUS, y - MARKER_OFFSET - BUBBLE_RADIUS, BUBBLE_SIZE, BUBBLE_SIZE);
+          ctx.restore();
+        } else {
+          ctx.beginPath();
+          ctx.arc(x, yPos, BUBBLE_RADIUS, 0, Math.PI * 2);
+          ctx.fillStyle = TWITTER_BLUE;
+          ctx.fill();
+        }
+      } else {
+        // Multiple tweets: Draw badge with count
+        const BADGE_SIZE = 28;
+        const BADGE_RADIUS = BADGE_SIZE / 2;
+        
+        // Hover highlight
+        if (isHovered) {
+          ctx.beginPath();
+          ctx.arc(x, yPos, BADGE_RADIUS + 6, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(29, 161, 242, 0.3)';
+          ctx.fill();
+        }
+        
+        // Badge background - intensity based on count
+        const intensity = Math.min(1, 0.4 + (cluster.count / 10) * 0.6);
+        ctx.beginPath();
+        ctx.arc(x, yPos, BADGE_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(29, 161, 242, ${intensity})`;
+        ctx.fill();
+        
+        // Border
+        ctx.beginPath();
+        ctx.arc(x, yPos, BADGE_RADIUS + 1, 0, Math.PI * 2);
+        ctx.strokeStyle = isHovered ? '#FFFFFF' : TWITTER_BLUE;
+        ctx.lineWidth = isHovered ? 2 : 1;
+        ctx.stroke();
+        
+        // Count text
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(cluster.count.toString(), x, yPos);
+      }
+    }
+    
+    // Draw current silence gap indicator
+    if (clusters.length > 0) {
+      const lastCluster = clusters[clusters.length - 1];
+      const now = Math.floor(Date.now() / 1000);
+      const silenceDuration = now - lastCluster.endTime;
+      
+      // Only show if significant silence (>24h)
+      if (silenceDuration > 24 * 60 * 60) {
+        const lastX = chart.timeScale().timeToCoordinate(lastCluster.startTime as Time);
+        const nowX = chart.timeScale().timeToCoordinate(now as Time);
+        const lastY = series.priceToCoordinate(lastCluster.candleHigh);
+        
+        if (lastX !== null && nowX !== null && lastY !== null) {
+          // Find current price for gap change
+          const candles = candlesRef.current;
+          const currentPrice = candles.length > 0 ? candles[candles.length - 1].c : null;
+          const lastTweet = lastCluster.tweets[lastCluster.tweets.length - 1];
+          const silenceChange = currentPrice && lastTweet.price_at_tweet 
+            ? ((currentPrice - lastTweet.price_at_tweet) / lastTweet.price_at_tweet) * 100 
+            : null;
+          
+          // Draw silence line
+          ctx.strokeStyle = 'rgba(239, 83, 80, 0.6)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 4]);
+          ctx.beginPath();
+          ctx.moveTo(lastX, lastY - MARKER_OFFSET);
+          ctx.lineTo(nowX, lastY - MARKER_OFFSET);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          
+          // Draw "now" marker
+          const midX = (lastX + nowX) / 2;
+          const yPos = lastY - MARKER_OFFSET - 20;
+          
+          ctx.font = 'bold 11px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#EF5350';
+          
+          const days = Math.floor(silenceDuration / (24 * 60 * 60));
+          ctx.fillText(`${days} days silent`, midX, yPos);
+          
+          if (silenceChange !== null) {
+            ctx.font = '10px system-ui, sans-serif';
+            ctx.fillText(`${silenceChange >= 0 ? '+' : ''}${silenceChange.toFixed(1)}%`, midX, yPos + 14);
+          }
+        }
+      }
+    }
+  }, [formatDuration]);
 
   // Initialize chart
   useEffect(() => {
@@ -334,7 +446,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
       },
       rightPriceScale: {
         borderColor: '#2A2E39',
-        scaleMargins: { top: 0.1, bottom: 0.2 },
+        scaleMargins: { top: 0.15, bottom: 0.2 },
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       handleScale: {
@@ -353,12 +465,12 @@ export default function Chart({ tweetEvents }: ChartProps) {
     });
 
     const series = chart.addCandlestickSeries({
-      upColor: 'rgba(38, 166, 154, 0.3)',
-      downColor: 'rgba(239, 83, 80, 0.3)',
-      borderUpColor: 'rgba(38, 166, 154, 0.4)',
-      borderDownColor: 'rgba(239, 83, 80, 0.4)',
-      wickUpColor: 'rgba(38, 166, 154, 0.3)',
-      wickDownColor: 'rgba(239, 83, 80, 0.3)',
+      upColor: '#26A69A',
+      downColor: '#EF5350',
+      borderUpColor: '#26A69A',
+      borderDownColor: '#EF5350',
+      wickUpColor: '#26A69A',
+      wickDownColor: '#EF5350',
     });
 
     chartRef.current = chart;
@@ -368,53 +480,51 @@ export default function Chart({ tweetEvents }: ChartProps) {
       const { width, height } = container.getBoundingClientRect();
       if (width > 0 && height > 0) {
         chart.applyOptions({ width, height });
-        drawAlphaLine();
         drawMarkers();
       }
     });
     resizeObserver.observe(container);
 
     chart.timeScale().subscribeVisibleTimeRangeChange(() => {
-      drawAlphaLine();
       drawMarkers();
     });
 
     chart.subscribeCrosshairMove((param: MouseEventParams) => {
       if (!param.point) {
-        setHoveredTweet(null);
+        setHoveredCluster(null);
         return;
       }
 
       const { x, y } = param.point;
-      const HOVER_RADIUS = 24;
-      const tweets = tweetEventsRef.current;
+      const HOVER_RADIUS = 28;
+      const clusters = clustersRef.current;
 
-      let found: TweetEvent | null = null;
+      let found: TweetCluster | null = null;
       let foundX = 0, foundY = 0;
 
-      for (const tweet of tweets) {
-        if (!tweet.price_at_tweet) continue;
-
-        const nearestTime = findNearestCandleTime(tweet.timestamp);
-        const tx = nearestTime ? chart.timeScale().timeToCoordinate(nearestTime as Time) : null;
-        const ty = series.priceToCoordinate(tweet.price_at_tweet);
+      for (const cluster of clusters) {
+        const tx = chart.timeScale().timeToCoordinate(cluster.startTime as Time);
+        const ty = series.priceToCoordinate(cluster.candleHigh);
 
         if (tx === null || ty === null) continue;
+        
+        // Adjust for marker offset
+        const tyAdj = ty - MARKER_OFFSET;
 
-        const dist = Math.hypot(tx - x, ty - y);
+        const dist = Math.hypot(tx - x, tyAdj - y);
         if (dist < HOVER_RADIUS) {
-          found = tweet;
+          found = cluster;
           foundX = tx;
-          foundY = ty;
+          foundY = tyAdj;
           break;
         }
       }
 
       if (found) {
-        setHoveredTweet(found);
+        setHoveredCluster(found);
         setTooltipPos({ x: foundX, y: foundY });
       } else {
-        setHoveredTweet(null);
+        setHoveredCluster(null);
       }
     });
 
@@ -422,21 +532,25 @@ export default function Chart({ tweetEvents }: ChartProps) {
       if (!param.point) return;
 
       const { x, y } = param.point;
-      const CLICK_RADIUS = 24;
-      const tweets = tweetEventsRef.current;
+      const CLICK_RADIUS = 28;
+      const clusters = clustersRef.current;
 
-      for (const tweet of tweets) {
-        if (!tweet.price_at_tweet) continue;
-
-        const nearestTime = findNearestCandleTime(tweet.timestamp);
-        const tx = nearestTime ? chart.timeScale().timeToCoordinate(nearestTime as Time) : null;
-        const ty = series.priceToCoordinate(tweet.price_at_tweet);
+      for (const cluster of clusters) {
+        const tx = chart.timeScale().timeToCoordinate(cluster.startTime as Time);
+        const ty = series.priceToCoordinate(cluster.candleHigh);
 
         if (tx === null || ty === null) continue;
+        
+        // Adjust for marker offset
+        const tyAdj = ty - MARKER_OFFSET;
 
-        const dist = Math.hypot(tx - x, ty - y);
+        const dist = Math.hypot(tx - x, tyAdj - y);
         if (dist < CLICK_RADIUS) {
-          window.open(`https://twitter.com/a1lon9/status/${tweet.tweet_id}`, '_blank');
+          // If single tweet, open it; otherwise open first tweet
+          const tweet = cluster.tweets[0];
+          if (tweet) {
+            window.open(`https://twitter.com/a1lon9/status/${tweet.tweet_id}`, '_blank');
+          }
           break;
         }
       }
@@ -446,31 +560,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
       resizeObserver.disconnect();
       chart.remove();
     };
-  }, [drawMarkers, drawAlphaLine]);
-
-  const findNearestCandleTime = (timestamp: number): number | null => {
-    const times = candleTimesRef.current;
-    if (times.length === 0) return null;
-    
-    let left = 0;
-    let right = times.length - 1;
-    
-    while (left < right) {
-      const mid = Math.floor((left + right) / 2);
-      if (times[mid] < timestamp) {
-        left = mid + 1;
-      } else {
-        right = mid;
-      }
-    }
-    
-    if (left > 0) {
-      const diffLeft = Math.abs(times[left] - timestamp);
-      const diffPrev = Math.abs(times[left - 1] - timestamp);
-      if (diffPrev < diffLeft) return times[left - 1];
-    }
-    return times[left];
-  };
+  }, [drawMarkers]);
 
   // Load data when timeframe changes
   useEffect(() => {
@@ -479,31 +569,14 @@ export default function Chart({ tweetEvents }: ChartProps) {
       setDataLoaded(false);
       
       try {
-        // Load PUMP and SOL prices in parallel
-        const [priceData, solPriceData] = await Promise.all([
-          loadPrices(timeframe),
-          loadSolPrices(timeframe),
-        ]);
+        const priceData = await loadPrices(timeframe);
         
         candlesRef.current = priceData.candles;
         candleTimesRef.current = priceData.candles.map(c => c.t);
-        solCandlesRef.current = solPriceData.candles;
         
-        // Calculate recent alpha for the badge
-        if (priceData.candles.length > 1 && solPriceData.candles.length > 1) {
-          const recentPump = priceData.candles.slice(-24);
-          const firstPump = recentPump[0];
-          const lastPump = recentPump[recentPump.length - 1];
-          
-          const firstSol = findClosestSolCandle(firstPump.t, solPriceData.candles, 3600);
-          const lastSol = findClosestSolCandle(lastPump.t, solPriceData.candles, 3600);
-          
-          if (firstSol && lastSol) {
-            const pumpReturn = calculateReturn(lastPump.c, firstPump.c);
-            const solReturn = calculateReturn(lastSol.c, firstSol.c);
-            setCurrentAlpha(pumpReturn - solReturn);
-          }
-        }
+        // Cluster tweets by current timeframe
+        const clusters = clusterTweetsByTimeframe(tweetEvents, priceData.candles, timeframe);
+        clustersRef.current = clusters;
         
         if (seriesRef.current && chartRef.current) {
           const chartData = toCandlestickData(priceData);
@@ -530,18 +603,17 @@ export default function Chart({ tweetEvents }: ChartProps) {
       setLoading(false);
     }
     loadData();
-  }, [timeframe, tweetEvents]);
+  }, [timeframe, tweetEvents, clusterTweetsByTimeframe]);
 
   // Redraw when state changes
   useEffect(() => {
     if (dataLoaded) {
       const timer = setTimeout(() => {
-        drawAlphaLine();
         drawMarkers();
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [dataLoaded, showBubbles, showAlpha, hoveredTweet, avatarLoaded, drawMarkers, drawAlphaLine]);
+  }, [dataLoaded, showBubbles, hoveredCluster, avatarLoaded, drawMarkers]);
 
   const jumpToLastTweet = useCallback(() => {
     if (!chartRef.current || tweetEvents.length === 0) return;
@@ -563,19 +635,9 @@ export default function Chart({ tweetEvents }: ChartProps) {
     chartRef.current?.timeScale().fitContent();
   }, []);
 
-  const alphaLabel = getAlphaLabel(currentAlpha);
-  const normalizedCurrentAlpha = calculateNormalizedAlpha(currentAlpha, 0, 0.10);
-  const currentAlphaColor = interpolateColor(normalizedCurrentAlpha);
-
   return (
     <div className="relative w-full h-full bg-[#131722]">
       <div ref={containerRef} className="absolute inset-0" />
-      
-      <canvas
-        ref={alphaCanvasRef}
-        className="absolute inset-0"
-        style={{ zIndex: 5, pointerEvents: 'none' }}
-      />
       
       <canvas
         ref={markersCanvasRef}
@@ -586,27 +648,15 @@ export default function Chart({ tweetEvents }: ChartProps) {
       {/* Top controls */}
       <div className="absolute top-2 left-2 z-20 flex items-center gap-2">
         <button
-          onClick={() => setShowAlpha(!showAlpha)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs transition-colors ${
-            showAlpha 
-              ? 'bg-[#2A2E39] text-white border border-[#3A3E49]' 
-              : 'bg-[#2A2E39] text-[#787B86] hover:text-[#D1D4DC]'
-          }`}
-        >
-          <span>📊</span>
-          <span>vs Market</span>
-        </button>
-        
-        <button
           onClick={() => setShowBubbles(!showBubbles)}
           className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs transition-colors ${
             showBubbles 
-              ? 'bg-[#2A2E39] text-white border border-[#3A3E49]' 
+              ? 'bg-[#1DA1F2] text-white' 
               : 'bg-[#2A2E39] text-[#787B86] hover:text-[#D1D4DC]'
           }`}
         >
           <span>🐦</span>
-          <span>Tweets</span>
+          <span>Tweet Markers</span>
         </button>
 
         <div className="flex items-center gap-1 ml-2">
@@ -625,50 +675,21 @@ export default function Chart({ tweetEvents }: ChartProps) {
         </div>
       </div>
       
-      {/* Alpha badge (top right) */}
-      <div className="absolute top-2 right-2 z-20 flex items-center gap-2">
-        <div 
-          className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer"
-          style={{ backgroundColor: 'rgba(30, 34, 45, 0.9)', border: `2px solid ${currentAlphaColor}` }}
-          onClick={() => setShowMethodology(!showMethodology)}
-        >
-          <span className="text-lg">{alphaLabel.emoji}</span>
-          <div className="flex flex-col">
-            <span className="text-xs font-semibold" style={{ color: currentAlphaColor }}>
-              {alphaLabel.label}
-            </span>
-            <span className="text-[10px] text-[#787B86]">
-              {currentAlpha >= 0 ? '+' : ''}{(currentAlpha * 100).toFixed(1)}% vs SOL (24h)
-            </span>
-          </div>
-          <span className="text-[10px] text-[#555] ml-1">ⓘ</span>
+      {/* Legend (top right) */}
+      <div className="absolute top-2 right-2 z-20 flex items-center gap-3 bg-[#1E222D]/90 px-3 py-2 rounded-lg text-xs">
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-full bg-[#1DA1F2]"></div>
+          <span className="text-[#B0B0B0]">Single tweet</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-5 h-5 rounded-full bg-[#1DA1F2] flex items-center justify-center text-[10px] text-white font-bold">3</div>
+          <span className="text-[#B0B0B0]">Multiple tweets</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-0.5 bg-[#EF5350] opacity-60" style={{ borderStyle: 'dashed' }}></div>
+          <span className="text-[#B0B0B0]">Silence gap</span>
         </div>
       </div>
-
-      {/* Methodology tooltip */}
-      {showMethodology && (
-        <div className="absolute top-16 right-2 z-30 bg-[#1E222D] border border-[#2A2E39] rounded-lg p-4 shadow-xl max-w-sm">
-          <div className="flex justify-between items-start mb-2">
-            <h3 className="text-sm font-semibold text-[#D1D4DC]">How to read this chart</h3>
-            <button 
-              onClick={() => setShowMethodology(false)}
-              className="text-[#787B86] hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="space-y-2 text-xs text-[#B0B0B0]">
-            <p>🟢 <span className="text-[#00C853]">Green</span> = PUMP is beating the crypto market (SOL)</p>
-            <p>🔴 <span className="text-[#D50000]">Red</span> = PUMP is losing to the crypto market</p>
-            <p>🐦 <span className="text-white">Bubbles</span> = Alon tweeted here</p>
-            <div className="border-t border-[#2A2E39] pt-2 mt-2">
-              <p className="text-[#787B86] italic">
-                Do green periods cluster around tweets? Do red periods happen during silence? You decide.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Timeframe selector */}
       <div className="absolute bottom-2 left-2 flex items-center gap-1 z-20">
@@ -678,7 +699,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
             onClick={() => setTimeframe(tf.value)}
             className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
               timeframe === tf.value
-                ? 'bg-[#2962FF] text-white'
+                ? 'bg-[#1DA1F2] text-white'
                 : 'text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39]'
             }`}
           >
@@ -690,65 +711,101 @@ export default function Chart({ tweetEvents }: ChartProps) {
         </span>
       </div>
       
-      {/* Alpha legend */}
-      {showAlpha && (
-        <div className="absolute bottom-2 right-2 z-20 flex items-center gap-2 bg-[#1E222D]/90 px-3 py-1.5 rounded">
-          <span className="text-[10px] text-[#D50000]">Losing</span>
-          <div 
-            className="w-24 h-2 rounded"
-            style={{
-              background: `linear-gradient(to right, ${ALPHA_GRADIENT.map(g => g.color).reverse().join(', ')})`
-            }}
-          />
-          <span className="text-[10px] text-[#00C853]">Winning</span>
-        </div>
-      )}
+      {/* Timeframe hint */}
+      <div className="absolute bottom-2 right-2 z-20 bg-[#1E222D]/90 px-3 py-1.5 rounded text-[10px] text-[#787B86]">
+        {timeframe === '1d' && 'Tweets grouped by day'}
+        {timeframe === '1h' && 'Tweets grouped by hour'}
+        {timeframe === '15m' && 'Tweets grouped by 15 minutes'}
+        {timeframe === '1m' && 'Individual tweets'}
+      </div>
 
       {/* Loading indicator */}
       {loading && (
         <div className="absolute top-14 right-2 z-20 flex items-center gap-2 bg-[#1E222D] px-3 py-1 rounded">
-          <div className="w-3 h-3 border-2 border-[#2962FF] border-t-transparent rounded-full animate-spin" />
+          <div className="w-3 h-3 border-2 border-[#1DA1F2] border-t-transparent rounded-full animate-spin" />
           <span className="text-xs text-[#787B86]">Loading...</span>
         </div>
       )}
 
-      {/* Tweet tooltip */}
-      {hoveredTweet && (
+      {/* Cluster/Tweet tooltip */}
+      {hoveredCluster && (
         <div
           className="absolute z-30 pointer-events-none bg-[#1E222D] border border-[#2A2E39] rounded-lg p-3 shadow-xl max-w-xs"
           style={{
             left: Math.min(tooltipPos.x + 20, (containerRef.current?.clientWidth || 400) - 300),
-            top: Math.max(tooltipPos.y - 60, 10),
+            top: Math.max(tooltipPos.y - 80, 10),
           }}
         >
-          <div className="flex items-start gap-2 mb-2">
-            <img src="/avatars/a1lon9.png" alt="Alon" className="w-8 h-8 rounded-full" />
-            <div>
-              <div className="text-[#D1D4DC] font-medium text-sm">@a1lon9</div>
-              <div className="text-[#787B86] text-xs">
-                {new Date(hoveredTweet.timestamp * 1000).toLocaleString()}
-              </div>
+          {/* Header */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <img src="/avatars/a1lon9.png" alt="Alon" className="w-6 h-6 rounded-full" />
+              <span className="text-[#D1D4DC] font-medium text-sm">@a1lon9</span>
             </div>
-          </div>
-          <p className="text-sm text-[#D1D4DC] line-clamp-3 mb-2">{hoveredTweet.text}</p>
-          <div className="flex items-center gap-4 text-xs text-[#787B86]">
-            <span>❤️ {hoveredTweet.likes.toLocaleString()}</span>
-            <span>🔁 {hoveredTweet.retweets.toLocaleString()}</span>
-          </div>
-          {hoveredTweet.change_1h_pct !== null && (
-            <div className="mt-2 pt-2 border-t border-[#2A2E39] flex items-center gap-3 text-xs">
-              <span className="text-[#787B86]">Price impact:</span>
-              <span className={hoveredTweet.change_1h_pct >= 0 ? 'text-[#26A69A]' : 'text-[#EF5350]'}>
-                1h: {hoveredTweet.change_1h_pct >= 0 ? '+' : ''}{hoveredTweet.change_1h_pct.toFixed(1)}%
+            {hoveredCluster.count > 1 && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-[#1DA1F2] text-white">
+                {hoveredCluster.count} tweets
               </span>
-              {hoveredTweet.change_24h_pct !== null && (
-                <span className={hoveredTweet.change_24h_pct >= 0 ? 'text-[#26A69A]' : 'text-[#EF5350]'}>
-                  24h: {hoveredTweet.change_24h_pct >= 0 ? '+' : ''}{hoveredTweet.change_24h_pct.toFixed(1)}%
-                </span>
+            )}
+          </div>
+          
+          {/* Date */}
+          <div className="text-[#787B86] text-xs mb-2">
+            {new Date(hoveredCluster.startTime * 1000).toLocaleDateString(undefined, {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })}
+            {timeframe !== '1d' && (
+              <span className="ml-1">
+                {new Date(hoveredCluster.startTime * 1000).toLocaleTimeString(undefined, {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            )}
+          </div>
+          
+          {/* Tweet preview(s) */}
+          <div className="space-y-2 mb-2">
+            {hoveredCluster.tweets.slice(0, 2).map((tweet, i) => (
+              <p key={i} className="text-sm text-[#D1D4DC] line-clamp-2">
+                {tweet.text}
+              </p>
+            ))}
+            {hoveredCluster.tweets.length > 2 && (
+              <p className="text-xs text-[#787B86]">
+                +{hoveredCluster.tweets.length - 2} more tweets...
+              </p>
+            )}
+          </div>
+          
+          {/* Period stats */}
+          <div className="border-t border-[#2A2E39] pt-2 mt-2">
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-[#787B86]">Period:</span>
+              <span className={hoveredCluster.periodChange >= 0 ? 'text-[#26A69A]' : 'text-[#EF5350]'}>
+                {hoveredCluster.periodChange >= 0 ? '+' : ''}{hoveredCluster.periodChange.toFixed(1)}%
+              </span>
+              {hoveredCluster.gapToNext && hoveredCluster.gapChange !== null && (
+                <>
+                  <span className="text-[#787B86]">→ Next:</span>
+                  <span className={hoveredCluster.gapChange >= 0 ? 'text-[#26A69A]' : 'text-[#EF5350]'}>
+                    {hoveredCluster.gapChange >= 0 ? '+' : ''}{hoveredCluster.gapChange.toFixed(1)}%
+                  </span>
+                </>
               )}
             </div>
-          )}
-          <div className="mt-2 text-xs text-[#2962FF]">Click bubble to view tweet →</div>
+          </div>
+          
+          {/* Engagement */}
+          <div className="flex items-center gap-4 text-xs text-[#787B86] mt-2">
+            <span>❤️ {hoveredCluster.tweets.reduce((sum, t) => sum + t.likes, 0).toLocaleString()}</span>
+            <span>🔁 {hoveredCluster.tweets.reduce((sum, t) => sum + t.retweets, 0).toLocaleString()}</span>
+          </div>
+          
+          <div className="mt-2 text-xs text-[#1DA1F2]">Click to view tweet →</div>
         </div>
       )}
     </div>
