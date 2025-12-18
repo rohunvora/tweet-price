@@ -1,4 +1,4 @@
-import { PriceData, TweetEventsData, Stats, Timeframe, Candle } from './types';
+import { PriceData, TweetEventsData, Stats, Timeframe, Candle, TweetEvent } from './types';
 
 // Cache for loaded data
 const priceCache = new Map<string, PriceData>();
@@ -116,5 +116,14 @@ export function filterCandlesToRange(
   endTime: number
 ): Candle[] {
   return candles.filter(c => c.t >= startTime && c.t <= endTime);
+}
+
+/**
+ * Extract and sort tweet timestamps for binary search in heat calculation
+ */
+export function getSortedTweetTimestamps(events: TweetEvent[]): number[] {
+  return events
+    .map(e => e.timestamp)
+    .sort((a, b) => a - b);
 }
 
