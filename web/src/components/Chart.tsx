@@ -11,21 +11,55 @@ import {
   MouseEventParams,
 } from 'lightweight-charts';
 import { Timeframe, TweetEvent, Candle } from '@/lib/types';
-import { 
-  loadPrices, 
-  toCandlestickData, 
-  getSortedTweetTimestamps,
-} from '@/lib/dataLoader';
-import { 
-  formatTimeGap,
-  formatPctChange,
-} from '@/lib/heatCalculator';
+import { loadPrices, toCandlestickData, getSortedTweetTimestamps } from '@/lib/dataLoader';
+import { formatTimeGap, formatPctChange } from '@/lib/formatters';
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+/** Chart theme colors (TradingView dark theme inspired) */
+const COLORS = {
+  background: '#131722',
+  text: '#D1D4DC',
+  textMuted: '#787B86',
+  gridLines: '#1E222D',
+  border: '#2A2E39',
+  crosshair: '#758696',
+  // Candlestick colors (muted to not compete with markers)
+  candleUp: 'rgba(38, 166, 154, 0.3)',
+  candleDown: 'rgba(239, 83, 80, 0.3)',
+  candleBorderUp: 'rgba(38, 166, 154, 0.4)',
+  candleBorderDown: 'rgba(239, 83, 80, 0.4)',
+  // Marker colors
+  markerPrimary: '#2962FF',
+  markerHoverGlow: 'rgba(41, 98, 255, 0.3)',
+  markerMultipleGlow: 'rgba(41, 98, 255, 0.4)',
+  // Price change colors
+  positive: '#26A69A',
+  negative: '#EF5350',
+} as const;
+
+/** Minimum time gap (in seconds) between clusters to show silence line */
+const SILENCE_GAP_THRESHOLD = 24 * 3600; // 24 hours
+
+/** Available timeframe options */
+const TIMEFRAMES: { label: string; value: Timeframe }[] = [
+  { label: '1m', value: '1m' },
+  { label: '15m', value: '15m' },
+  { label: '1h', value: '1h' },
+  { label: '1D', value: '1d' },
+];
+
+// =============================================================================
+// Types
+// =============================================================================
 
 interface ChartProps {
   tweetEvents: TweetEvent[];
 }
 
-// Cluster for grouped tweets
+/** Internal representation of a tweet cluster for rendering */
 interface TweetClusterDisplay {
   tweets: TweetEvent[];
   x: number;
@@ -37,50 +71,90 @@ interface TweetClusterDisplay {
   pctSincePrev: number | null;
 }
 
-const TIMEFRAMES: { label: string; value: Timeframe }[] = [
-  { label: '1m', value: '1m' },
-  { label: '15m', value: '15m' },
-  { label: '1h', value: '1h' },
-  { label: '1D', value: '1d' },
-];
+// =============================================================================
+// Component
+// =============================================================================
 
+/**
+ * Interactive price chart with tweet markers overlaid.
+ * 
+ * Features:
+ * - Candlestick price data from multiple timeframes
+ * - Tweet markers that cluster when zoomed out
+ * - Silence gap annotations showing price change during tweet gaps
+ * - Hover tooltips and click-to-open-tweet
+ */
 export default function Chart({ tweetEvents }: ChartProps) {
+  // ---------------------------------------------------------------------------
+  // Refs
+  // ---------------------------------------------------------------------------
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const markersCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const avatarRef = useRef<HTMLImageElement | null>(null);
   
-  // Default to 1D to show full history
+  // Data refs (avoid stale closures in callbacks)
+  const tweetEventsRef = useRef(tweetEvents);
+  const showBubblesRef = useRef(true);
+  const hoveredTweetRef = useRef<TweetEvent | null>(null);
+  const candleTimesRef = useRef<number[]>([]);
+  const candlesRef = useRef<Candle[]>([]);
+  const sortedTweetTimestampsRef = useRef<number[]>([]);
+
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
   const [timeframe, setTimeframe] = useState<Timeframe>('1d');
   const [loading, setLoading] = useState(true);
   const [showBubbles, setShowBubbles] = useState(true);
   const [hoveredTweet, setHoveredTweet] = useState<TweetEvent | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [dataLoaded, setDataLoaded] = useState(false);
-  
-  // Store latest values in refs to avoid stale closures
-  const tweetEventsRef = useRef(tweetEvents);
-  const showBubblesRef = useRef(showBubbles);
-  const hoveredTweetRef = useRef(hoveredTweet);
-  const candleTimesRef = useRef<number[]>([]);
-  const candlesRef = useRef<Candle[]>([]);
-  const sortedTweetTimestampsRef = useRef<number[]>([]);
-  
-  // Keep refs in sync
+  const [avatarLoaded, setAvatarLoaded] = useState(false);
+
+  // ---------------------------------------------------------------------------
+  // Sync refs with state/props
+  // ---------------------------------------------------------------------------
   useEffect(() => { tweetEventsRef.current = tweetEvents; }, [tweetEvents]);
   useEffect(() => { showBubblesRef.current = showBubbles; }, [showBubbles]);
   useEffect(() => { hoveredTweetRef.current = hoveredTweet; }, [hoveredTweet]);
-  
-  // Compute sorted tweet timestamps
   useEffect(() => {
     sortedTweetTimestampsRef.current = getSortedTweetTimestamps(tweetEvents);
   }, [tweetEvents]);
-  
-  // Avatar
-  const avatarRef = useRef<HTMLImageElement | null>(null);
-  const [avatarLoaded, setAvatarLoaded] = useState(false);
 
-  // Load avatar
+  // ---------------------------------------------------------------------------
+  // Helper: Find nearest candle time (binary search)
+  // ---------------------------------------------------------------------------
+  const findNearestCandleTime = useCallback((timestamp: number): number | null => {
+    const times = candleTimesRef.current;
+    if (times.length === 0) return null;
+    
+    let left = 0;
+    let right = times.length - 1;
+    
+    // Binary search for closest candle
+    while (left < right) {
+      const mid = Math.floor((left + right) / 2);
+      if (times[mid] < timestamp) {
+        left = mid + 1;
+      } else {
+        right = mid;
+      }
+    }
+    
+    // Check if previous candle is actually closer
+    if (left > 0) {
+      const diffLeft = Math.abs(times[left] - timestamp);
+      const diffPrev = Math.abs(times[left - 1] - timestamp);
+      if (diffPrev < diffLeft) return times[left - 1];
+    }
+    return times[left];
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Load avatar image
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -95,7 +169,9 @@ export default function Chart({ tweetEvents }: ChartProps) {
     };
   }, []);
 
-  // Draw tweet markers with smart clustering and annotations
+  // ---------------------------------------------------------------------------
+  // Draw markers (clustering + gap annotations)
+  // ---------------------------------------------------------------------------
   const drawMarkers = useCallback(() => {
     const chart = chartRef.current;
     const series = seriesRef.current;
@@ -108,10 +184,10 @@ export default function Chart({ tweetEvents }: ChartProps) {
 
     if (!canvas || !container) return;
 
+    // Set up canvas for HiDPI displays
     const dpr = window.devicePixelRatio || 1;
     const width = container.clientWidth;
     const height = container.clientHeight;
-
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     canvas.style.width = `${width}px`;
@@ -119,7 +195,6 @@ export default function Chart({ tweetEvents }: ChartProps) {
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
@@ -132,87 +207,48 @@ export default function Chart({ tweetEvents }: ChartProps) {
     const rangeTo = visibleRange.to as number;
     const visibleSeconds = rangeTo - rangeFrom;
     
-    // Adaptive sizing based on zoom level
-    // More zoomed out = smaller markers and more aggressive clustering
-    const zoomFactor = Math.min(1, Math.max(0.4, 86400 * 7 / visibleSeconds)); // 7 days = 1.0
-    const BUBBLE_SIZE = Math.round(24 + 16 * zoomFactor); // 24-40px
-    const BUBBLE_RADIUS = BUBBLE_SIZE / 2;
-    const CLUSTER_THRESHOLD = BUBBLE_SIZE + 8; // Pixels apart to cluster
+    // Adaptive sizing: smaller markers when zoomed out, larger when zoomed in
+    // zoomFactor: 1.0 at 7 days visible, 0.4 at very zoomed out
+    const zoomFactor = Math.min(1, Math.max(0.4, 86400 * 7 / visibleSeconds));
+    const bubbleSize = Math.round(24 + 16 * zoomFactor);  // 24-40px
+    const bubbleRadius = bubbleSize / 2;
+    const clusterThreshold = bubbleSize + 8;  // Pixels apart to trigger clustering
 
-    // Filter visible tweets
-    const visibleTweets = tweets.filter(tweet => {
-      if (!tweet.price_at_tweet) return false;
-      return tweet.timestamp >= rangeFrom && tweet.timestamp <= rangeTo;
-    }).sort((a, b) => a.timestamp - b.timestamp);
+    // Filter to visible tweets with price data
+    const visibleTweets = tweets
+      .filter(t => t.price_at_tweet && t.timestamp >= rangeFrom && t.timestamp <= rangeTo)
+      .sort((a, b) => a.timestamp - b.timestamp);
 
     if (visibleTweets.length === 0) return;
 
-    // Calculate positions and cluster nearby markers
+    // -------------------------------------------------------------------------
+    // Build clusters from overlapping markers
+    // -------------------------------------------------------------------------
     const clusters: TweetClusterDisplay[] = [];
     let currentCluster: TweetEvent[] = [];
     let clusterX: number | null = null;
 
-    for (let i = 0; i < visibleTweets.length; i++) {
-      const tweet = visibleTweets[i];
+    for (const tweet of visibleTweets) {
       const nearestTime = findNearestCandleTime(tweet.timestamp);
       const x = nearestTime ? chart.timeScale().timeToCoordinate(nearestTime as Time) : null;
-      
       if (x === null) continue;
 
       if (currentCluster.length === 0) {
         currentCluster.push(tweet);
         clusterX = x;
-      } else if (clusterX !== null && Math.abs(x - clusterX) < CLUSTER_THRESHOLD) {
+      } else if (clusterX !== null && Math.abs(x - clusterX) < clusterThreshold) {
         currentCluster.push(tweet);
-        // Update cluster X to be average
         clusterX = (clusterX * (currentCluster.length - 1) + x) / currentCluster.length;
       } else {
-        // Emit current cluster
-        if (currentCluster.length > 0) {
-          const avgPrice = currentCluster.reduce((sum, t) => sum + (t.price_at_tweet || 0), 0) / currentCluster.length;
-          const avgTimestamp = currentCluster.reduce((sum, t) => sum + t.timestamp, 0) / currentCluster.length;
-          const changes = currentCluster.filter(t => t.change_24h_pct !== null).map(t => t.change_24h_pct!);
-          const avgChange = changes.length > 0 ? changes.reduce((a, b) => a + b, 0) / changes.length : null;
-          const y = series.priceToCoordinate(avgPrice);
-          
-          if (y !== null && clusterX !== null) {
-            clusters.push({
-              tweets: [...currentCluster],
-              x: clusterX,
-              y,
-              avgPrice,
-              avgTimestamp,
-              avgChange,
-              timeSincePrev: null,
-              pctSincePrev: null,
-            });
-          }
-        }
+        // Emit completed cluster
+        emitCluster(currentCluster, clusterX!, series, clusters);
         currentCluster = [tweet];
         clusterX = x;
       }
     }
-
     // Emit final cluster
     if (currentCluster.length > 0 && clusterX !== null) {
-      const avgPrice = currentCluster.reduce((sum, t) => sum + (t.price_at_tweet || 0), 0) / currentCluster.length;
-      const avgTimestamp = currentCluster.reduce((sum, t) => sum + t.timestamp, 0) / currentCluster.length;
-      const changes = currentCluster.filter(t => t.change_24h_pct !== null).map(t => t.change_24h_pct!);
-      const avgChange = changes.length > 0 ? changes.reduce((a, b) => a + b, 0) / changes.length : null;
-      const y = series.priceToCoordinate(avgPrice);
-      
-      if (y !== null) {
-        clusters.push({
-          tweets: [...currentCluster],
-          x: clusterX,
-          y,
-          avgPrice,
-          avgTimestamp,
-          avgChange,
-          timeSincePrev: null,
-          pctSincePrev: null,
-        });
-      }
+      emitCluster(currentCluster, clusterX, series, clusters);
     }
 
     // Calculate time gaps and price changes between clusters
@@ -225,13 +261,12 @@ export default function Chart({ tweetEvents }: ChartProps) {
       }
     }
 
-    // Draw silence gap lines between clusters with labels at midpoint
-    const GAP_THRESHOLD = 24 * 3600; // 24 hours minimum to show gap line
-    
-    // Adaptive font sizing based on zoom level
-    const timeFontSize = Math.round(8 + 4 * zoomFactor); // 8-12px
-    const pctFontSize = Math.round(9 + 4 * zoomFactor);  // 9-13px
-    const labelSpacing = Math.round(6 + 4 * zoomFactor); // 6-10px
+    // -------------------------------------------------------------------------
+    // Draw silence gap lines between clusters
+    // -------------------------------------------------------------------------
+    const timeFontSize = Math.round(8 + 4 * zoomFactor);
+    const pctFontSize = Math.round(9 + 4 * zoomFactor);
+    const labelSpacing = Math.round(6 + 4 * zoomFactor);
     
     ctx.setLineDash([6, 4]);
     ctx.lineWidth = 1.5;
@@ -240,105 +275,98 @@ export default function Chart({ tweetEvents }: ChartProps) {
       const prev = clusters[i - 1];
       const curr = clusters[i];
       
-      if (curr.timeSincePrev && curr.timeSincePrev > GAP_THRESHOLD) {
-        // Draw dashed line connecting clusters
+      if (curr.timeSincePrev && curr.timeSincePrev > SILENCE_GAP_THRESHOLD) {
         const isNegative = curr.pctSincePrev !== null && curr.pctSincePrev < 0;
         ctx.strokeStyle = isNegative ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)';
         
-        const startX = prev.x + BUBBLE_RADIUS + 4;
-        const startY = prev.y;
-        const endX = curr.x - BUBBLE_RADIUS - 4;
-        const endY = curr.y;
+        const startX = prev.x + bubbleRadius + 4;
+        const endX = curr.x - bubbleRadius - 4;
+        const midX = (startX + endX) / 2;
+        const midY = (prev.y + curr.y) / 2;
         
+        // Draw dashed line
         ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
+        ctx.moveTo(startX, prev.y);
+        ctx.lineTo(endX, curr.y);
         ctx.stroke();
         
-        // Draw labels at midpoint of the gap line (always shown)
-        const midX = (startX + endX) / 2;
-        const midY = (startY + endY) / 2;
+        // Draw labels at midpoint
+        ctx.setLineDash([]);
         
-        ctx.setLineDash([]); // Reset for text
-        
-        // Time since previous (e.g., "3d")
         if (curr.timeSincePrev > 3600) {
           ctx.font = `${timeFontSize}px system-ui, sans-serif`;
           ctx.textAlign = 'center';
-          ctx.fillStyle = '#787B86';
+          ctx.fillStyle = COLORS.textMuted;
           ctx.fillText(formatTimeGap(curr.timeSincePrev), midX, midY - labelSpacing);
         }
         
-        // Price change (e.g., "-20.6%")
         if (curr.pctSincePrev !== null) {
-          const pctColor = curr.pctSincePrev >= 0 ? '#26A69A' : '#EF5350';
           ctx.font = `bold ${pctFontSize}px system-ui, sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.fillStyle = pctColor;
+          ctx.fillStyle = curr.pctSincePrev >= 0 ? COLORS.positive : COLORS.negative;
           ctx.fillText(formatPctChange(curr.pctSincePrev), midX, midY + labelSpacing);
         }
         
-        ctx.setLineDash([6, 4]); // Restore for next line
+        ctx.setLineDash([6, 4]);
       }
     }
     ctx.setLineDash([]);
 
-    // Draw clusters
+    // -------------------------------------------------------------------------
+    // Draw cluster markers
+    // -------------------------------------------------------------------------
     for (const cluster of clusters) {
       const { x, y, tweets: clusterTweets } = cluster;
       const count = clusterTweets.length;
       const isMultiple = count > 1;
-      const isSingleHovered = !isMultiple && hovered?.tweet_id === clusterTweets[0].tweet_id;
-      const isClusterHovered = isMultiple && clusterTweets.some(t => hovered?.tweet_id === t.tweet_id);
-      const isHovered = isSingleHovered || isClusterHovered;
+      const isHovered = clusterTweets.some(t => hovered?.tweet_id === t.tweet_id);
 
       // Hover glow
       if (isHovered) {
         ctx.beginPath();
-        ctx.arc(x, y, BUBBLE_RADIUS + 8, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(41, 98, 255, 0.3)';
+        ctx.arc(x, y, bubbleRadius + 8, 0, Math.PI * 2);
+        ctx.fillStyle = COLORS.markerHoverGlow;
         ctx.fill();
       }
 
-      // Multiple tweets indicator (blue glow behind)
+      // Multiple tweets glow
       if (isMultiple) {
         ctx.beginPath();
-        ctx.arc(x, y, BUBBLE_RADIUS + 6, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(41, 98, 255, 0.4)';
+        ctx.arc(x, y, bubbleRadius + 6, 0, Math.PI * 2);
+        ctx.fillStyle = COLORS.markerMultipleGlow;
         ctx.fill();
       }
 
-      // Border
+      // Border ring
       ctx.beginPath();
-      ctx.arc(x, y, BUBBLE_RADIUS + 2, 0, Math.PI * 2);
-      ctx.strokeStyle = isHovered ? '#2962FF' : '#FFFFFF';
+      ctx.arc(x, y, bubbleRadius + 2, 0, Math.PI * 2);
+      ctx.strokeStyle = isHovered ? COLORS.markerPrimary : '#FFFFFF';
       ctx.lineWidth = isHovered ? 3 : 2;
       ctx.stroke();
 
-      // Avatar or count badge
+      // Avatar or fallback circle
       if (avatar) {
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, BUBBLE_RADIUS, 0, Math.PI * 2);
+        ctx.arc(x, y, bubbleRadius, 0, Math.PI * 2);
         ctx.clip();
-        ctx.drawImage(avatar, x - BUBBLE_RADIUS, y - BUBBLE_RADIUS, BUBBLE_SIZE, BUBBLE_SIZE);
+        ctx.drawImage(avatar, x - bubbleRadius, y - bubbleRadius, bubbleSize, bubbleSize);
         ctx.restore();
       } else {
         ctx.beginPath();
-        ctx.arc(x, y, BUBBLE_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = '#2962FF';
+        ctx.arc(x, y, bubbleRadius, 0, Math.PI * 2);
+        ctx.fillStyle = COLORS.markerPrimary;
         ctx.fill();
       }
 
-      // Multiple count badge
+      // Count badge for multiple tweets
       if (isMultiple) {
-        const badgeSize = Math.max(14, BUBBLE_SIZE * 0.4);
-        const badgeX = x + BUBBLE_RADIUS - badgeSize / 2;
-        const badgeY = y - BUBBLE_RADIUS + badgeSize / 3;
+        const badgeSize = Math.max(14, bubbleSize * 0.4);
+        const badgeX = x + bubbleRadius - badgeSize / 2;
+        const badgeY = y - bubbleRadius + badgeSize / 3;
         
         ctx.beginPath();
         ctx.arc(badgeX, badgeY, badgeSize / 2 + 2, 0, Math.PI * 2);
-        ctx.fillStyle = '#2962FF';
+        ctx.fillStyle = COLORS.markerPrimary;
         ctx.fill();
         ctx.strokeStyle = '#FFFFFF';
         ctx.lineWidth = 1.5;
@@ -351,41 +379,69 @@ export default function Chart({ tweetEvents }: ChartProps) {
         ctx.fillText(count.toString(), badgeX, badgeY);
       }
     }
-  }, []);
+  }, [findNearestCandleTime]);
 
+  /** Helper: emit a cluster from accumulated tweets */
+  function emitCluster(
+    tweets: TweetEvent[],
+    x: number,
+    series: ISeriesApi<'Candlestick'>,
+    clusters: TweetClusterDisplay[]
+  ) {
+    const avgPrice = tweets.reduce((sum, t) => sum + (t.price_at_tweet || 0), 0) / tweets.length;
+    const avgTimestamp = tweets.reduce((sum, t) => sum + t.timestamp, 0) / tweets.length;
+    const changes = tweets.filter(t => t.change_24h_pct !== null).map(t => t.change_24h_pct!);
+    const avgChange = changes.length > 0 ? changes.reduce((a, b) => a + b, 0) / changes.length : null;
+    const y = series.priceToCoordinate(avgPrice);
+    
+    if (y !== null) {
+      clusters.push({
+        tweets: [...tweets],
+        x,
+        y,
+        avgPrice,
+        avgTimestamp,
+        avgChange,
+        timeSincePrev: null,
+        pctSincePrev: null,
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Initialize chart
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!containerRef.current) return;
 
     const container = containerRef.current;
-    const width = container.clientWidth;
-    const height = container.clientHeight;
+    const { clientWidth: width, clientHeight: height } = container;
 
     const chart = createChart(container, {
       width: width || 800,
       height: height || 500,
       layout: {
-        background: { color: '#131722' },
-        textColor: '#D1D4DC',
+        background: { color: COLORS.background },
+        textColor: COLORS.text,
       },
       grid: {
-        vertLines: { color: '#1E222D' },
-        horzLines: { color: '#1E222D' },
+        vertLines: { color: COLORS.gridLines },
+        horzLines: { color: COLORS.gridLines },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: '#758696', width: 1, style: 0, labelBackgroundColor: '#2A2E39' },
-        horzLine: { color: '#758696', width: 1, style: 0, labelBackgroundColor: '#2A2E39' },
+        vertLine: { color: COLORS.crosshair, width: 1, style: 0, labelBackgroundColor: COLORS.border },
+        horzLine: { color: COLORS.crosshair, width: 1, style: 0, labelBackgroundColor: COLORS.border },
       },
       timeScale: {
-        borderColor: '#2A2E39',
+        borderColor: COLORS.border,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 5,
         minBarSpacing: 0.5,
       },
       rightPriceScale: {
-        borderColor: '#2A2E39',
+        borderColor: COLORS.border,
         scaleMargins: { top: 0.1, bottom: 0.2 },
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
@@ -405,17 +461,18 @@ export default function Chart({ tweetEvents }: ChartProps) {
     });
 
     const series = chart.addCandlestickSeries({
-      upColor: 'rgba(38, 166, 154, 0.3)',
-      downColor: 'rgba(239, 83, 80, 0.3)',
-      borderUpColor: 'rgba(38, 166, 154, 0.4)',
-      borderDownColor: 'rgba(239, 83, 80, 0.4)',
-      wickUpColor: 'rgba(38, 166, 154, 0.3)',
-      wickDownColor: 'rgba(239, 83, 80, 0.3)',
+      upColor: COLORS.candleUp,
+      downColor: COLORS.candleDown,
+      borderUpColor: COLORS.candleBorderUp,
+      borderDownColor: COLORS.candleBorderDown,
+      wickUpColor: COLORS.candleUp,
+      wickDownColor: COLORS.candleDown,
     });
 
     chartRef.current = chart;
     seriesRef.current = series;
 
+    // Resize observer
     const resizeObserver = new ResizeObserver(() => {
       const { width, height } = container.getBoundingClientRect();
       if (width > 0 && height > 0) {
@@ -425,10 +482,10 @@ export default function Chart({ tweetEvents }: ChartProps) {
     });
     resizeObserver.observe(container);
 
-    chart.timeScale().subscribeVisibleTimeRangeChange(() => {
-      drawMarkers();
-    });
+    // Redraw markers on pan/zoom
+    chart.timeScale().subscribeVisibleTimeRangeChange(() => drawMarkers());
 
+    // Hover detection
     chart.subscribeCrosshairMove((param: MouseEventParams) => {
       if (!param.point) {
         setHoveredTweet(null);
@@ -439,9 +496,6 @@ export default function Chart({ tweetEvents }: ChartProps) {
       const HOVER_RADIUS = 24;
       const tweets = tweetEventsRef.current;
 
-      let found: TweetEvent | null = null;
-      let foundX = 0, foundY = 0;
-
       for (const tweet of tweets) {
         if (!tweet.price_at_tweet) continue;
 
@@ -449,25 +503,16 @@ export default function Chart({ tweetEvents }: ChartProps) {
         const tx = nearestTime ? chart.timeScale().timeToCoordinate(nearestTime as Time) : null;
         const ty = series.priceToCoordinate(tweet.price_at_tweet);
 
-        if (tx === null || ty === null) continue;
-
-        const dist = Math.hypot(tx - x, ty - y);
-        if (dist < HOVER_RADIUS) {
-          found = tweet;
-          foundX = tx;
-          foundY = ty;
-          break;
+        if (tx !== null && ty !== null && Math.hypot(tx - x, ty - y) < HOVER_RADIUS) {
+          setHoveredTweet(tweet);
+          setTooltipPos({ x: tx, y: ty });
+          return;
         }
       }
-
-      if (found) {
-        setHoveredTweet(found);
-        setTooltipPos({ x: foundX, y: foundY });
-      } else {
-        setHoveredTweet(null);
-      }
+      setHoveredTweet(null);
     });
 
+    // Click to open tweet
     chart.subscribeClick((param: MouseEventParams) => {
       if (!param.point) return;
 
@@ -482,12 +527,9 @@ export default function Chart({ tweetEvents }: ChartProps) {
         const tx = nearestTime ? chart.timeScale().timeToCoordinate(nearestTime as Time) : null;
         const ty = series.priceToCoordinate(tweet.price_at_tweet);
 
-        if (tx === null || ty === null) continue;
-
-        const dist = Math.hypot(tx - x, ty - y);
-        if (dist < CLICK_RADIUS) {
+        if (tx !== null && ty !== null && Math.hypot(tx - x, ty - y) < CLICK_RADIUS) {
           window.open(`https://twitter.com/a1lon9/status/${tweet.tweet_id}`, '_blank');
-          break;
+          return;
         }
       }
     });
@@ -496,33 +538,11 @@ export default function Chart({ tweetEvents }: ChartProps) {
       resizeObserver.disconnect();
       chart.remove();
     };
-  }, [drawMarkers]);
+  }, [drawMarkers, findNearestCandleTime]);
 
-  const findNearestCandleTime = (timestamp: number): number | null => {
-    const times = candleTimesRef.current;
-    if (times.length === 0) return null;
-    
-    let left = 0;
-    let right = times.length - 1;
-    
-    while (left < right) {
-      const mid = Math.floor((left + right) / 2);
-      if (times[mid] < timestamp) {
-        left = mid + 1;
-      } else {
-        right = mid;
-      }
-    }
-    
-    if (left > 0) {
-      const diffLeft = Math.abs(times[left] - timestamp);
-      const diffPrev = Math.abs(times[left - 1] - timestamp);
-      if (diffPrev < diffLeft) return times[left - 1];
-    }
-    return times[left];
-  };
-
-  // Load data when timeframe changes
+  // ---------------------------------------------------------------------------
+  // Load price data
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     async function loadData() {
       setLoading(true);
@@ -535,17 +555,14 @@ export default function Chart({ tweetEvents }: ChartProps) {
         candleTimesRef.current = priceData.candles.map(c => c.t);
         
         if (seriesRef.current && chartRef.current) {
-          const chartData = toCandlestickData(priceData);
-          seriesRef.current.setData(chartData as CandlestickData<Time>[]);
+          seriesRef.current.setData(toCandlestickData(priceData) as CandlestickData<Time>[]);
           
+          // Set initial view range from first tweet to latest data
           const tweetsWithPrice = tweetEvents.filter(t => t.price_at_tweet !== null);
           if (tweetsWithPrice.length > 0 && priceData.candles.length > 0) {
-            const firstTweetTime = tweetsWithPrice[0].timestamp;
-            const lastDataTime = priceData.end;
-            
             chartRef.current.timeScale().setVisibleRange({
-              from: firstTweetTime as Time,
-              to: lastDataTime as Time,
+              from: tweetsWithPrice[0].timestamp as Time,
+              to: priceData.end as Time,
             });
           } else {
             chartRef.current.timeScale().fitContent();
@@ -561,16 +578,19 @@ export default function Chart({ tweetEvents }: ChartProps) {
     loadData();
   }, [timeframe, tweetEvents]);
 
-  // Redraw when state changes
+  // ---------------------------------------------------------------------------
+  // Redraw markers when state changes
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (dataLoaded) {
-      const timer = setTimeout(() => {
-        drawMarkers();
-      }, 50);
+      const timer = setTimeout(drawMarkers, 50);
       return () => clearTimeout(timer);
     }
   }, [dataLoaded, showBubbles, hoveredTweet, avatarLoaded, drawMarkers]);
 
+  // ---------------------------------------------------------------------------
+  // Navigation handlers
+  // ---------------------------------------------------------------------------
   const jumpToLastTweet = useCallback(() => {
     if (!chartRef.current || tweetEvents.length === 0) return;
     
@@ -591,10 +611,15 @@ export default function Chart({ tweetEvents }: ChartProps) {
     chartRef.current?.timeScale().fitContent();
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <div className="relative w-full h-full bg-[#131722]">
+      {/* Chart container */}
       <div ref={containerRef} className="absolute inset-0" />
       
+      {/* Markers canvas overlay */}
       <canvas
         ref={markersCanvasRef}
         className="absolute inset-0"
@@ -630,7 +655,6 @@ export default function Chart({ tweetEvents }: ChartProps) {
           </button>
         </div>
       </div>
-      
 
       {/* Timeframe selector */}
       <div className="absolute bottom-2 left-2 flex items-center gap-1 z-20">
@@ -652,7 +676,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
         </span>
       </div>
       
-      {/* Legend (bottom right) */}
+      {/* Legend */}
       {showBubbles && (
         <div className="absolute bottom-2 right-2 z-20 flex items-center gap-3 bg-[#1E222D]/90 px-3 py-1.5 rounded text-[10px]">
           <div className="flex items-center gap-1.5">

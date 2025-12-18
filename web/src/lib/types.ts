@@ -1,13 +1,18 @@
-// Price candle data (compact format from static JSON)
+// =============================================================================
+// Price Data Types
+// =============================================================================
+
+/** Compact OHLCV candle format from static JSON files */
 export interface Candle {
-  t: number;  // timestamp epoch
-  o: number;  // open
-  h: number;  // high
-  l: number;  // low
-  c: number;  // close
+  t: number;  // timestamp (unix epoch seconds)
+  o: number;  // open price
+  h: number;  // high price
+  l: number;  // low price
+  c: number;  // close price
   v: number;  // volume
 }
 
+/** Price data container with metadata */
 export interface PriceData {
   timeframe: string;
   count: number;
@@ -16,7 +21,11 @@ export interface PriceData {
   candles: Candle[];
 }
 
-// Tweet event data (aligned with prices)
+// =============================================================================
+// Tweet Event Types
+// =============================================================================
+
+/** Single tweet event with price impact data */
 export interface TweetEvent {
   tweet_id: string;
   timestamp: number;
@@ -32,6 +41,7 @@ export interface TweetEvent {
   impressions: number;
 }
 
+/** Container for tweet events data */
 export interface TweetEventsData {
   generated_at: string;
   price_definition: string;
@@ -39,7 +49,11 @@ export interface TweetEventsData {
   events: TweetEvent[];
 }
 
-// Statistics data
+// =============================================================================
+// Statistics Types
+// =============================================================================
+
+/** Pre-computed statistics for the stats panel */
 export interface Stats {
   generated_at: string;
   summary: {
@@ -85,26 +99,9 @@ export interface Stats {
   }>;
 }
 
-// Timeframe options
+// =============================================================================
+// Chart Types
+// =============================================================================
+
+/** Available timeframe options for price data */
 export type Timeframe = '1m' | '15m' | '1h' | '1d';
-
-// Chart marker for tweet bubbles
-export interface TweetMarker {
-  time: number;
-  price: number;
-  tweet: TweetEvent;
-}
-
-// Clustered tweets by timeframe window
-export interface TweetCluster {
-  startTime: number;      // Start of the time window
-  endTime: number;        // End of the time window
-  tweets: TweetEvent[];   // All tweets in this window
-  count: number;          // Number of tweets
-  candleHigh: number;     // High price of the candle (for positioning)
-  candleLow: number;      // Low price of the candle
-  periodChange: number;   // Price change during this period (%)
-  gapToNext: number | null;     // Seconds until next cluster
-  gapChange: number | null;     // Price change during gap (%)
-}
-

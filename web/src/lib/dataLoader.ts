@@ -1,19 +1,7 @@
-import { PriceData, TweetEventsData, Stats, Timeframe, Candle, TweetEvent } from './types';
+import { PriceData, Timeframe, Candle, TweetEvent } from './types';
 
-// Cache for loaded data
+// Cache for loaded price data
 const priceCache = new Map<string, PriceData>();
-const tweetCache: TweetEventsData | null = null;
-const statsCache: Stats | null = null;
-
-/**
- * Determine optimal timeframe based on visible range (days)
- */
-export function getTimeframeForRange(visibleDays: number): Timeframe {
-  if (visibleDays > 180) return '1d';
-  if (visibleDays > 30) return '1h';
-  if (visibleDays > 7) return '15m';
-  return '1m';
-}
 
 /**
  * Load price data for a specific timeframe
@@ -38,7 +26,7 @@ export async function loadPrices(timeframe: Timeframe): Promise<PriceData> {
 }
 
 /**
- * Load 1m prices (chunked by month)
+ * Load 1m prices (chunked by month for performance)
  */
 async function load1mPrices(): Promise<PriceData> {
   if (priceCache.has('1m')) {
@@ -79,9 +67,9 @@ async function load1mPrices(): Promise<PriceData> {
 }
 
 /**
- * Load tweet events
+ * Load tweet events data
  */
-export async function loadTweetEvents(): Promise<TweetEventsData> {
+export async function loadTweetEvents() {
   const response = await fetch('/data/tweet_events.json');
   return response.json();
 }
@@ -89,30 +77,13 @@ export async function loadTweetEvents(): Promise<TweetEventsData> {
 /**
  * Load pre-computed statistics
  */
-export async function loadStats(): Promise<Stats> {
+export async function loadStats() {
   const response = await fetch('/data/stats.json');
   return response.json();
 }
 
 /**
- * Load SOL price data for a specific timeframe (for alpha calculation)
- */
-export async function loadSolPrices(timeframe: Timeframe): Promise<PriceData> {
-  const cacheKey = `sol_${timeframe}`;
-  
-  if (priceCache.has(cacheKey)) {
-    return priceCache.get(cacheKey)!;
-  }
-  
-  const response = await fetch(`/data/sol_prices_${timeframe}.json`);
-  const data: PriceData = await response.json();
-  
-  priceCache.set(cacheKey, data);
-  return data;
-}
-
-/**
- * Convert price data to Lightweight Charts format
+ * Convert price data to Lightweight Charts candlestick format
  */
 export function toCandlestickData(prices: PriceData) {
   return prices.candles.map(c => ({
@@ -125,17 +96,6 @@ export function toCandlestickData(prices: PriceData) {
 }
 
 /**
- * Filter candles to visible range
- */
-export function filterCandlesToRange(
-  candles: Candle[],
-  startTime: number,
-  endTime: number
-): Candle[] {
-  return candles.filter(c => c.t >= startTime && c.t <= endTime);
-}
-
-/**
  * Get sorted array of tweet timestamps for binary search
  */
 export function getSortedTweetTimestamps(tweets: TweetEvent[]): number[] {
@@ -144,51 +104,3 @@ export function getSortedTweetTimestamps(tweets: TweetEvent[]): number[] {
     .map(t => t.timestamp)
     .sort((a, b) => a - b);
 }
-
-/**
- * Find the closest SOL candle to a given timestamp
- */
-export function findClosestSolCandle(
-  timestamp: number,
-  solCandles: Candle[],
-  maxDiffSeconds: number
-): Candle | null {
-  if (solCandles.length === 0) return null;
-  
-  // Binary search for closest candle
-  let left = 0;
-  let right = solCandles.length - 1;
-  
-  while (left < right) {
-    const mid = Math.floor((left + right) / 2);
-    if (solCandles[mid].t < timestamp) {
-      left = mid + 1;
-    } else {
-      right = mid;
-    }
-  }
-  
-  // Check neighbors for closest
-  let closest = solCandles[left];
-  let minDiff = Math.abs(closest.t - timestamp);
-  
-  if (left > 0) {
-    const prevDiff = Math.abs(solCandles[left - 1].t - timestamp);
-    if (prevDiff < minDiff) {
-      closest = solCandles[left - 1];
-      minDiff = prevDiff;
-    }
-  }
-  
-  if (minDiff > maxDiffSeconds) return null;
-  return closest;
-}
-
-/**
- * Calculate return between two prices
- */
-export function calculateReturn(current: number, previous: number): number {
-  if (previous === 0) return 0;
-  return (current - previous) / previous;
-}
-
