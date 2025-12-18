@@ -47,6 +47,10 @@ HL_MAX_CANDLES = 5000  # Hyperliquid limit
 BE_MAX_CANDLES = 1000  # Birdeye limit
 RATE_LIMIT_DELAY = 0.5  # Be nice to the APIs
 
+# Outlier detection defaults
+OUTLIER_THRESHOLD_STD = 10  # Flag candles > N std deviations from median
+OUTLIER_MIN_CANDLES = 20    # Need at least this many candles for detection
+
 # Hyperliquid interval mapping
 HL_INTERVALS = {
     "1m": "1m",
@@ -62,6 +66,96 @@ BE_INTERVALS = {
     "1h": "1H",
     "1d": "1D",
 }
+
+
+# =============================================================================
+# OUTLIER DETECTION (Sniper Bot Detection)
+# =============================================================================
+
+def detect_outliers(
+    candles: List[Dict],
+    threshold_std: float = OUTLIER_THRESHOLD_STD,
+    min_candles: int = OUTLIER_MIN_CANDLES
+) -> List[Dict]:
+    """
+    Detect statistically anomalous candles (likely sniper bot activity).
+    
+    Sniper bots often create extreme price spikes in the first few minutes
+    of a token's trading, resulting in HIGH values that are orders of
+    magnitude above the actual trading price.
+    
+    Args:
+        candles: List of candle dicts with 'high', 'timestamp_epoch' keys
+        threshold_std: Flag candles where HIGH > median + (threshold_std * std)
+        min_candles: Minimum candles needed for statistical detection
+    
+    Returns:
+        List of outlier candle dicts with added 'outlier_reason' field
+    """
+    if len(candles) < min_candles:
+        return []
+    
+    # Extract HIGH values
+    highs = [c["high"] for c in candles if c.get("high") is not None]
+    
+    if len(highs) < min_candles:
+        return []
+    
+    # Calculate median (more robust than mean for skewed data)
+    sorted_highs = sorted(highs)
+    n = len(sorted_highs)
+    median = sorted_highs[n // 2] if n % 2 else (sorted_highs[n//2 - 1] + sorted_highs[n//2]) / 2
+    
+    # Calculate standard deviation
+    mean = sum(highs) / len(highs)
+    variance = sum((h - mean) ** 2 for h in highs) / len(highs)
+    std = variance ** 0.5
+    
+    if std == 0:
+        return []
+    
+    # Threshold: median + (threshold_std * std)
+    upper_threshold = median + (threshold_std * std)
+    
+    # Find outliers
+    outliers = []
+    for c in candles:
+        if c.get("high") is not None and c["high"] > upper_threshold:
+            outlier = c.copy()
+            outlier["outlier_reason"] = f"HIGH ${c['high']:.4f} > threshold ${upper_threshold:.4f} (median=${median:.4f}, {threshold_std}σ)"
+            outlier["outlier_ratio"] = c["high"] / median if median > 0 else float('inf')
+            outliers.append(outlier)
+    
+    return outliers
+
+
+def warn_outliers(candles: List[Dict], asset_id: str, timeframe: str) -> List[Dict]:
+    """
+    Detect and LOUDLY warn about outliers. Does NOT remove them.
+    
+    Returns the detected outliers for logging/reporting.
+    """
+    outliers = detect_outliers(candles)
+    
+    if outliers:
+        print(f"\n{'!'*60}")
+        print(f"WARNING: {len(outliers)} POTENTIAL OUTLIERS DETECTED")
+        print(f"Asset: {asset_id}, Timeframe: {timeframe}")
+        print(f"{'!'*60}")
+        
+        for o in outliers[:10]:  # Show first 10
+            ts = datetime.utcfromtimestamp(o["timestamp_epoch"]).strftime("%Y-%m-%d %H:%M")
+            print(f"  {ts}: HIGH=${o['high']:.4f} ({o['outlier_ratio']:.1f}x median)")
+            print(f"         {o['outlier_reason']}")
+        
+        if len(outliers) > 10:
+            print(f"  ... and {len(outliers) - 10} more outliers")
+        
+        print(f"\nTo clean these outliers, run:")
+        print(f"  python db.py cleanup-outliers --asset {asset_id} --timeframe {timeframe}")
+        print(f"{'!'*60}\n")
+    
+    return outliers
 
 
 def fetch_with_retry(fetch_fn, max_retries=5, base_delay=1.0):
@@ -635,6 +729,9 @@ def fetch_for_asset(
         
         for tf, candles in price_data.items():
             if candles:
+                # OUTLIER DETECTION: Warn loudly but don't block
+                warn_outliers(candles, asset_id, tf)
+                
                 inserted = insert_prices(conn, asset_id, tf, candles, data_source="birdeye")
                 
                 latest_ts = max(c["timestamp_epoch"] for c in candles)
@@ -667,6 +764,9 @@ def fetch_for_asset(
         
         for tf, candles in price_data.items():
             if candles:
+                # OUTLIER DETECTION: Warn loudly but don't block
+                warn_outliers(candles, asset_id, tf)
+                
                 inserted = insert_prices(conn, asset_id, tf, candles, data_source="geckoterminal")
                 
                 latest_ts = max(c["timestamp_epoch"] for c in candles)
@@ -694,6 +794,9 @@ def fetch_for_asset(
         candles = fetch_coingecko_daily(coingecko_id, days=90)
         
         if candles:
+            # OUTLIER DETECTION: Warn loudly but don't block
+            warn_outliers(candles, asset_id, "1d")
+            
             inserted = insert_prices(conn, asset_id, "1d", candles, data_source="coingecko")
             latest_ts = max(c["timestamp_epoch"] for c in candles)
             update_ingestion_state(
@@ -711,6 +814,9 @@ def fetch_for_asset(
         hourly_candles = fetch_coingecko_hourly(coingecko_id, days=30)
         
         if hourly_candles:
+            # OUTLIER DETECTION: Warn loudly but don't block
+            warn_outliers(hourly_candles, asset_id, "1h")
+            
             inserted = insert_prices(conn, asset_id, "1h", hourly_candles, data_source="coingecko")
             latest_ts = max(c["timestamp_epoch"] for c in hourly_candles)
             update_ingestion_state(
@@ -735,6 +841,9 @@ def fetch_for_asset(
 
         for tf, candles in price_data.items():
             if candles:
+                # OUTLIER DETECTION: Warn loudly but don't block
+                warn_outliers(candles, asset_id, tf)
+                
                 inserted = insert_prices(conn, asset_id, tf, candles, data_source="hyperliquid")
 
                 latest_ts = max(c["timestamp_epoch"] for c in candles)

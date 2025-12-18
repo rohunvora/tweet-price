@@ -785,6 +785,118 @@ def init_db(db_path: Path = ANALYTICS_DB) -> duckdb.DuckDBPyConnection:
     return conn
 
 
+# =============================================================================
+# OUTLIER DETECTION FUNCTIONS (for CLI)
+# =============================================================================
+
+OUTLIER_THRESHOLD_STD = 10  # Default threshold
+OUTLIER_MIN_CANDLES = 20    # Minimum candles for detection
+
+
+def detect_price_outliers(
+    conn: duckdb.DuckDBPyConnection,
+    asset_id: str,
+    timeframe: str = "1m",
+    threshold_std: float = OUTLIER_THRESHOLD_STD
+) -> List[Dict[str, Any]]:
+    """
+    Detect outlier candles in the database for a given asset/timeframe.
+    
+    Returns list of outlier dicts with timestamp, prices, and stats.
+    """
+    # Get all candles for this asset/timeframe
+    results = conn.execute("""
+        SELECT timestamp, open, high, low, close, volume
+        FROM prices
+        WHERE asset_id = ? AND timeframe = ?
+        ORDER BY timestamp
+    """, [asset_id, timeframe]).fetchall()
+    
+    if len(results) < OUTLIER_MIN_CANDLES:
+        return []
+    
+    candles = [
+        {
+            "timestamp": r[0],
+            "open": r[1],
+            "high": r[2],
+            "low": r[3],
+            "close": r[4],
+            "volume": r[5],
+        }
+        for r in results
+    ]
+    
+    # Calculate stats on HIGH values
+    highs = [c["high"] for c in candles if c["high"] is not None]
+    
+    if len(highs) < OUTLIER_MIN_CANDLES:
+        return []
+    
+    sorted_highs = sorted(highs)
+    n = len(sorted_highs)
+    median = sorted_highs[n // 2] if n % 2 else (sorted_highs[n//2 - 1] + sorted_highs[n//2]) / 2
+    
+    mean = sum(highs) / len(highs)
+    variance = sum((h - mean) ** 2 for h in highs) / len(highs)
+    std = variance ** 0.5
+    
+    if std == 0:
+        return []
+    
+    upper_threshold = median + (threshold_std * std)
+    
+    outliers = []
+    for c in candles:
+        if c["high"] is not None and c["high"] > upper_threshold:
+            outliers.append({
+                "timestamp": c["timestamp"],
+                "timestamp_str": c["timestamp"].strftime("%Y-%m-%d %H:%M") if hasattr(c["timestamp"], "strftime") else str(c["timestamp"]),
+                "open": c["open"],
+                "high": c["high"],
+                "low": c["low"],
+                "close": c["close"],
+                "ratio": c["high"] / median if median > 0 else float("inf"),
+                "median": median,
+                "threshold": upper_threshold,
+            })
+    
+    return outliers
+
+
+def cleanup_outliers(
+    conn: duckdb.DuckDBPyConnection,
+    asset_id: str,
+    timeframe: str = "1m",
+    threshold_std: float = OUTLIER_THRESHOLD_STD,
+    dry_run: bool = True
+) -> int:
+    """
+    Remove outlier candles from the database.
+    
+    Args:
+        dry_run: If True, just report what would be deleted
+    
+    Returns number of candles deleted (or would be deleted).
+    """
+    outliers = detect_price_outliers(conn, asset_id, timeframe, threshold_std)
+    
+    if not outliers:
+        return 0
+    
+    if dry_run:
+        return len(outliers)
+    
+    # Delete the outliers
+    for o in outliers:
+        conn.execute("""
+            DELETE FROM prices
+            WHERE asset_id = ? AND timeframe = ? AND timestamp = ?
+        """, [asset_id, timeframe, o["timestamp"]])
+    
+    return len(outliers)
+
+
 # CLI interface
 def main():
     """CLI for database management."""
@@ -793,12 +905,14 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python db.py <command>")
         print("Commands:")
-        print("  init          - Initialize database schema")
-        print("  sync-assets   - Sync assets from JSON to database")
-        print("  stats         - Show database statistics")
-        print("  list-assets   - List all assets")
-        print("  gaps          - Show price data gaps")
-        print("  sources       - Show data source summary")
+        print("  init              - Initialize database schema")
+        print("  sync-assets       - Sync assets from JSON to database")
+        print("  stats             - Show database statistics")
+        print("  list-assets       - List all assets")
+        print("  gaps              - Show price data gaps")
+        print("  sources           - Show data source summary")
+        print("  show-outliers     - Show potential price outliers (sniper bot detection)")
+        print("  cleanup-outliers  - Remove price outliers from database")
         sys.exit(1)
     
     command = sys.argv[1]
@@ -872,6 +986,118 @@ def main():
             for tf, sources in timeframes.items():
                 for source, info in sources.items():
                     print(f"    {tf}/{source}: {info['count']:,} candles")
+        conn.close()
+    
+    elif command == "show-outliers":
+        # Parse args: --asset ASSET [--timeframe TF] [--threshold N]
+        asset_id = None
+        timeframe = "1m"
+        threshold = OUTLIER_THRESHOLD_STD
+        
+        i = 2
+        while i < len(sys.argv):
+            if sys.argv[i] == "--asset" and i + 1 < len(sys.argv):
+                asset_id = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--timeframe" and i + 1 < len(sys.argv):
+                timeframe = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--threshold" and i + 1 < len(sys.argv):
+                threshold = float(sys.argv[i + 1])
+                i += 2
+            else:
+                i += 1
+        
+        if not asset_id:
+            print("ERROR: --asset required")
+            print("Usage: python db.py show-outliers --asset ASSET [--timeframe 1m] [--threshold 10]")
+            sys.exit(1)
+        
+        conn = get_connection()
+        init_schema(conn)
+        
+        print(f"\nDetecting outliers for {asset_id}/{timeframe} (threshold: {threshold}σ)")
+        print("=" * 70)
+        
+        outliers = detect_price_outliers(conn, asset_id, timeframe, threshold)
+        
+        if not outliers:
+            print("No outliers detected.")
+        else:
+            print(f"\nFound {len(outliers)} potential outliers:\n")
+            print(f"{'Timestamp':<20} {'HIGH':>12} {'Ratio':>8} {'Median':>12} {'Threshold':>12}")
+            print("-" * 70)
+            for o in outliers[:20]:
+                print(f"{o['timestamp_str']:<20} ${o['high']:>10.4f} {o['ratio']:>7.1f}x ${o['median']:>10.4f} ${o['threshold']:>10.4f}")
+            if len(outliers) > 20:
+                print(f"... and {len(outliers) - 20} more")
+            
+            print(f"\nTo remove these outliers, run:")
+            print(f"  python db.py cleanup-outliers --asset {asset_id} --timeframe {timeframe} --confirm")
+        
+        conn.close()
+    
+    elif command == "cleanup-outliers":
+        # Parse args: --asset ASSET [--timeframe TF] [--threshold N] --confirm
+        asset_id = None
+        timeframe = "1m"
+        threshold = OUTLIER_THRESHOLD_STD
+        confirm = False
+        
+        i = 2
+        while i < len(sys.argv):
+            if sys.argv[i] == "--asset" and i + 1 < len(sys.argv):
+                asset_id = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--timeframe" and i + 1 < len(sys.argv):
+                timeframe = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--threshold" and i + 1 < len(sys.argv):
+                threshold = float(sys.argv[i + 1])
+                i += 2
+            elif sys.argv[i] == "--confirm":
+                confirm = True
+                i += 1
+            else:
+                i += 1
+        
+        if not asset_id:
+            print("ERROR: --asset required")
+            print("Usage: python db.py cleanup-outliers --asset ASSET [--timeframe 1m] [--threshold 10] --confirm")
+            sys.exit(1)
+        
+        conn = get_connection()
+        init_schema(conn)
+        
+        print(f"\nCleaning outliers for {asset_id}/{timeframe} (threshold: {threshold}σ)")
+        print("=" * 70)
+        
+        # First show what would be deleted
+        outliers = detect_price_outliers(conn, asset_id, timeframe, threshold)
+        
+        if not outliers:
+            print("No outliers to clean.")
+            conn.close()
+            sys.exit(0)
+        
+        print(f"\nFound {len(outliers)} outliers to remove:")
+        for o in outliers[:10]:
+            print(f"  {o['timestamp_str']}: HIGH=${o['high']:.4f} ({o['ratio']:.1f}x median)")
+        if len(outliers) > 10:
+            print(f"  ... and {len(outliers) - 10} more")
+        
+        if not confirm:
+            print(f"\n{'!'*60}")
+            print("DRY RUN - no changes made. Add --confirm to actually delete.")
+            print(f"{'!'*60}")
+            conn.close()
+            sys.exit(0)
+        
+        # Actually delete
+        deleted = cleanup_outliers(conn, asset_id, timeframe, threshold, dry_run=False)
+        print(f"\n✓ Deleted {deleted} outlier candles")
+        print("Note: You may need to re-run export_static.py to regenerate JSON files")
+        
         conn.close()
     
     else:

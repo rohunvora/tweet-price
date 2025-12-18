@@ -209,6 +209,26 @@ def fetch_for_asset(
         if oldest_state:
             oldest_id = oldest_state.get("last_id")
     
+    # AUTO-DETECT: If backfill requested but no oldest_id in state, query DB
+    if backfill and not oldest_id:
+        oldest_in_db = conn.execute("""
+            SELECT MIN(id) FROM tweets WHERE asset_id = ?
+        """, [asset_id]).fetchone()[0]
+        
+        if oldest_in_db:
+            oldest_id = oldest_in_db
+            print(f"    Auto-detected oldest tweet ID from DB: {oldest_id}")
+            # Save it to state for future runs
+            update_ingestion_state(conn, asset_id, "tweets_oldest", last_id=oldest_id)
+        else:
+            # LOUD ERROR: Can't backfill if we have no tweets yet
+            conn.close()
+            print(f"\n{'!'*60}")
+            print(f"ERROR: Cannot backfill - no tweets in DB for '{asset_id}'")
+            print(f"Run without --backfill first to fetch initial tweets.")
+            print(f"{'!'*60}\n")
+            return {"status": "error", "reason": f"No tweets in DB for {asset_id}. Run without --backfill first."}
+    
     # Determine fetch mode
     if backfill and oldest_id:
         print(f"    Mode: BACKFILL (fetching tweets older than {oldest_id})")

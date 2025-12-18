@@ -226,15 +226,18 @@ def export_tweet_events_for_asset(
     asset_id: str,
     output_dir: Path,
     use_daily_fallback: bool = False,
-    filter_no_price: bool = True
+    filter_no_price: bool = True,
+    strict: bool = False
 ) -> int:
     """
     Export tweet events for a single asset.
     
     Args:
         filter_no_price: If True, exclude tweets without price data
+        strict: If True, raise error if any tweets lack price data
     
     Returns count of events exported.
+    Raises ValueError in strict mode if data gaps exist.
     """
     # Check if asset has 1m price data, otherwise try 1h
     has_1m = conn.execute("""
@@ -259,10 +262,32 @@ def export_tweet_events_for_asset(
     # Filter out tweets without price data
     original_count = len(events)
     if filter_no_price:
-        events = [e for e in events if e.get("price_at_tweet") is not None]
-        filtered_count = original_count - len(events)
+        events_with_price = [e for e in events if e.get("price_at_tweet") is not None]
+        filtered_count = original_count - len(events_with_price)
+        
         if filtered_count > 0:
-            print(f"    (Filtered {filtered_count} tweets without price data)")
+            # LOUD WARNING
+            print(f"\n    {'!'*50}")
+            print(f"    WARNING: {filtered_count}/{original_count} tweets filtered (NO PRICE DATA)")
+            print(f"    Asset: {asset_id}")
+            print(f"    {'!'*50}")
+            
+            # Show which tweets are affected
+            missing_tweets = [e for e in events if e.get("price_at_tweet") is None]
+            for t in missing_tweets[:5]:
+                print(f"      - {t['timestamp_iso'][:19]}: {t['text'][:50]}...")
+            if len(missing_tweets) > 5:
+                print(f"      ... and {len(missing_tweets) - 5} more")
+            
+            print(f"    -> These tweets need price backfill or manual review")
+            print(f"    -> Run: python fetch_prices.py --asset {asset_id} --backfill")
+            print()
+            
+            # STRICT MODE: Fail if any data gaps
+            if strict:
+                raise ValueError(f"STRICT MODE: {filtered_count} tweets without price data for {asset_id}")
+        
+        events = events_with_price
     
     if not events:
         print(f"    Tweet events: 0 events (all filtered - no price data)")
@@ -293,7 +318,7 @@ def export_tweet_events_for_asset(
     return len(events)
 
 
-def export_asset(asset_id: str) -> Dict[str, Any]:
+def export_asset(asset_id: str, strict: bool = False) -> Dict[str, Any]:
     """Export all data for a single asset."""
     conn = get_connection()
     init_schema(conn)
@@ -310,8 +335,12 @@ def export_asset(asset_id: str) -> Dict[str, Any]:
     # Export prices
     price_stats = export_prices_for_asset(conn, asset_id, output_dir)
     
-    # Export tweet events
-    events_count = export_tweet_events_for_asset(conn, asset_id, output_dir)
+    # Export tweet events (may raise in strict mode)
+    try:
+        events_count = export_tweet_events_for_asset(conn, asset_id, output_dir, strict=strict)
+    except ValueError as e:
+        conn.close()
+        return {"status": "error", "reason": str(e)}
     
     conn.close()
     
@@ -322,7 +351,7 @@ def export_asset(asset_id: str) -> Dict[str, Any]:
     }
 
 
-def export_all_assets() -> Dict[str, Any]:
+def export_all_assets(strict: bool = False) -> Dict[str, Any]:
     """Export data for all enabled assets."""
     conn = get_connection()
     init_schema(conn)
@@ -331,11 +360,18 @@ def export_all_assets() -> Dict[str, Any]:
     conn.close()
     
     print(f"Exporting {len(assets)} enabled assets...")
+    if strict:
+        print("STRICT MODE: Will fail if any tweets lack price data")
     
     results = {}
     for asset in assets:
-        result = export_asset(asset["id"])
+        result = export_asset(asset["id"], strict=strict)
         results[asset["id"]] = result
+        
+        # In strict mode, stop on first error
+        if strict and result.get("status") == "error":
+            print(f"\nSTRICT MODE FAILURE: {result.get('reason')}")
+            break
     
     return results
 
@@ -389,6 +425,11 @@ def main():
         type=str,
         help="Specific asset ID to export (default: all enabled assets)"
     )
+    parser.add_argument(
+        "--strict", "-s",
+        action="store_true",
+        help="Strict mode: fail if any tweets lack price data (no silent filtering)"
+    )
     
     args = parser.parse_args()
     
@@ -396,15 +437,17 @@ def main():
     print("Exporting Static Data")
     print("=" * 60)
     print(f"Output: {PUBLIC_DATA_DIR}")
+    if args.strict:
+        print("Mode: STRICT (will fail on data gaps)")
     
     # Always export assets.json
     export_assets_json()
     
     if args.asset:
-        result = export_asset(args.asset)
+        result = export_asset(args.asset, strict=args.strict)
         print(f"\nResult: {result}")
     else:
-        results = export_all_assets()
+        results = export_all_assets(strict=args.strict)
         
         # Print summary
         print("\n" + "=" * 60)
