@@ -107,9 +107,9 @@ def export_timeframe(
     
     filename = f"prices_{timeframe}.json"
     filepath = output_dir / filename
-    
-        with open(filepath, "w") as f:
-            json.dump(output, f, separators=(",", ":"))
+
+    with open(filepath, "w") as f:
+        json.dump(output, f, separators=(",", ":"))
     
     size_kb = filepath.stat().st_size / 1024
     print(f"    {timeframe}: {len(candles):,} candles ({size_kb:.1f} KB)")
@@ -139,8 +139,8 @@ def export_1m_chunked(
             month_key = ts.strftime("%Y-%m")
             ts_epoch = int(ts.timestamp())
         else:
-        dt = datetime.utcfromtimestamp(ts)
-        month_key = dt.strftime("%Y-%m")
+            dt = datetime.utcfromtimestamp(ts)
+            month_key = dt.strftime("%Y-%m")
             ts_epoch = ts
         
         if month_key not in months:

@@ -1,11 +1,12 @@
 """
-Fetch multi-timeframe price data from GeckoTerminal or CoinGecko.
+Fetch multi-timeframe price data from GeckoTerminal, CoinGecko, or Hyperliquid.
 Store in unified DuckDB database.
 
 Supports:
 - Multi-asset fetching via --asset argument
 - GeckoTerminal for DEX pools (1m, 15m, 1h, 1d data)
 - CoinGecko for listed tokens (daily data only)
+- Hyperliquid for perps/spot (1m, 15m, 1h, 1d data)
 - Incremental fetching from last known timestamp
 
 Usage:
@@ -28,9 +29,19 @@ from db import (
 # API endpoints
 GT_API = "https://api.geckoterminal.com/api/v2"
 CG_API = "https://api.coingecko.com/api/v3"
+HL_API = "https://api.hyperliquid.xyz/info"
 
 MAX_CANDLES_PER_REQUEST = 1000
+HL_MAX_CANDLES = 5000  # Hyperliquid limit
 RATE_LIMIT_DELAY = 0.5  # Be nice to the APIs
+
+# Hyperliquid interval mapping
+HL_INTERVALS = {
+    "1m": "1m",
+    "15m": "15m",
+    "1h": "1h",
+    "1d": "1d",
+}
 
 
 def fetch_geckoterminal_ohlcv(
@@ -149,6 +160,134 @@ def fetch_coingecko_daily(
             })
         
         return candles
+
+
+def fetch_hyperliquid_ohlcv(
+    coin: str,
+    timeframe: str,
+    start_time: int,
+    end_time: int
+) -> List[Dict]:
+    """
+    Fetch OHLCV data from Hyperliquid API.
+
+    Args:
+        coin: Coin symbol (e.g., 'HYPE', 'BTC')
+        timeframe: One of '1m', '15m', '1h', '1d'
+        start_time: Start timestamp in milliseconds
+        end_time: End timestamp in milliseconds
+
+    Returns list of candles.
+    """
+    interval = HL_INTERVALS.get(timeframe, "1d")
+
+    payload = {
+        "type": "candleSnapshot",
+        "req": {
+            "coin": coin,
+            "interval": interval,
+            "startTime": start_time,
+            "endTime": end_time,
+        }
+    }
+
+    with httpx.Client(timeout=30.0) as client:
+        response = client.post(HL_API, json=payload)
+
+        if response.status_code == 429:
+            print("      Rate limited, waiting 60s...")
+            time.sleep(60)
+            return fetch_hyperliquid_ohlcv(coin, timeframe, start_time, end_time)
+
+        if response.status_code != 200:
+            print(f"      Error {response.status_code}: {response.text[:200]}")
+            return []
+
+        candle_data = response.json()
+
+        if not candle_data:
+            return []
+
+        candles = []
+        for c in candle_data:
+            candles.append({
+                "timestamp_epoch": int(c["t"] / 1000),
+                "open": float(c["o"]),
+                "high": float(c["h"]),
+                "low": float(c["l"]),
+                "close": float(c["c"]),
+                "volume": float(c["v"]),
+            })
+
+        return candles
+
+
+def fetch_hyperliquid_all_timeframes(
+    coin: str,
+    launch_timestamp: int,
+    timeframes: List[str] = None
+) -> Dict[str, List[Dict]]:
+    """
+    Fetch all timeframes for a Hyperliquid coin.
+
+    Args:
+        coin: Coin symbol
+        launch_timestamp: Launch date as Unix timestamp (seconds)
+        timeframes: List of timeframes to fetch (default: all)
+
+    Returns dict of timeframe -> candles.
+    """
+    if timeframes is None:
+        timeframes = TIMEFRAMES
+
+    now_ms = int(datetime.utcnow().timestamp() * 1000)
+    launch_ms = launch_timestamp * 1000
+
+    results = {}
+
+    for tf in timeframes:
+        print(f"    Fetching {tf} data from Hyperliquid...")
+
+        all_candles = []
+
+        # Hyperliquid returns max 5000 candles per request
+        # We need to paginate by time windows
+        window_size_ms = {
+            "1m": 5000 * 60 * 1000,       # 5000 minutes
+            "15m": 5000 * 15 * 60 * 1000,  # 5000 * 15 minutes
+            "1h": 5000 * 60 * 60 * 1000,   # 5000 hours
+            "1d": 5000 * 24 * 60 * 60 * 1000,  # 5000 days
+        }.get(tf, 5000 * 24 * 60 * 60 * 1000)
+
+        current_start = launch_ms
+
+        while current_start < now_ms:
+            current_end = min(current_start + window_size_ms, now_ms)
+
+            candles = fetch_hyperliquid_ohlcv(coin, tf, current_start, current_end)
+
+            if candles:
+                all_candles.extend(candles)
+                oldest = datetime.utcfromtimestamp(candles[0]["timestamp_epoch"]).strftime("%Y-%m-%d")
+                newest = datetime.utcfromtimestamp(candles[-1]["timestamp_epoch"]).strftime("%Y-%m-%d")
+                print(f"      Fetched {len(candles)} candles ({oldest} to {newest})")
+
+            current_start = current_end
+            time.sleep(RATE_LIMIT_DELAY)
+
+        if all_candles:
+            # Sort and deduplicate by timestamp
+            seen = set()
+            unique_candles = []
+            for c in sorted(all_candles, key=lambda x: x["timestamp_epoch"]):
+                if c["timestamp_epoch"] not in seen:
+                    seen.add(c["timestamp_epoch"])
+                    unique_candles.append(c)
+
+            results[tf] = unique_candles
+            print(f"      Total: {len(unique_candles):,} candles")
+
+    return results
 
 
 def fetch_geckoterminal_all_timeframes(
@@ -323,7 +462,46 @@ def fetch_for_asset(
             print(f"      Inserted {inserted} daily candles")
         else:
             print(f"      No data available")
-    
+
+    elif price_source == "hyperliquid":
+        # Hyperliquid - use asset name as coin symbol
+        coin = asset.get("name", asset_id.upper())
+        launch_date = asset.get("launch_date")
+
+        if launch_date:
+            if hasattr(launch_date, 'timestamp'):
+                launch_ts = int(launch_date.timestamp())
+            else:
+                launch_ts = int(datetime.fromisoformat(launch_date.replace('Z', '+00:00')).timestamp())
+        else:
+            launch_ts = int(datetime.utcnow().timestamp()) - (365 * 24 * 3600)
+
+        print(f"    Coin: {coin}")
+        print(f"    Launch: {datetime.utcfromtimestamp(launch_ts).strftime('%Y-%m-%d')}")
+
+        # Fetch all timeframes
+        if timeframes is None:
+            timeframes = TIMEFRAMES
+
+        price_data = fetch_hyperliquid_all_timeframes(coin, launch_ts, timeframes)
+
+        # Insert into database
+        for tf, candles in price_data.items():
+            if candles:
+                inserted = insert_prices(conn, asset_id, tf, candles)
+
+                # Update ingestion state
+                latest_ts = max(c["timestamp_epoch"] for c in candles)
+                update_ingestion_state(
+                    conn, asset_id, f"prices_{tf}",
+                    last_timestamp=datetime.utcfromtimestamp(latest_ts)
+                )
+
+                results["timeframes"][tf] = {
+                    "count": inserted,
+                    "latest": datetime.utcfromtimestamp(latest_ts).isoformat(),
+                }
+
     else:
         conn.close()
         return {"status": "error", "reason": f"Unknown price_source: {price_source}"}

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-18T05:57:37.692443Z",
+  "generated_at": "2025-12-18T19:05:44.600048Z",
   "asset": "useless",
   "asset_name": "USELESS",
   "founder": "theunipcs",
@@ -3250,9 +3250,9 @@
       "replies": 140,
       "impressions": 65031,
       "price_at_tweet": 0.2849683426802904,
-      "price_1h": 0.32407725149523403,
+      "price_1h": 0.32502105588756325,
       "price_24h": 0.36100425263279207,
-      "change_1h_pct": 13.72,
+      "change_1h_pct": 14.06,
       "change_24h_pct": 26.68
     },
     {
@@ -7811,9 +7811,9 @@
       "impressions": 37854,
       "price_at_tweet": 0.0703602373465277,
       "price_1h": 0.07016021852698553,
-      "price_24h": 0.06408478415218687,
+      "price_24h": 0.06710510140788425,
       "change_1h_pct": -0.28,
-      "change_24h_pct": -8.92
+      "change_24h_pct": -4.63
     }
   ]
 }
