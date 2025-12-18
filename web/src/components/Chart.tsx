@@ -139,7 +139,6 @@ export default function Chart({ tweetEvents }: ChartProps) {
 
     const rangeFrom = visibleRange.from as number;
     const rangeTo = visibleRange.to as number;
-    const visibleRangeDays = (rangeTo - rangeFrom) / 86400;
 
     // Filter candles in visible range (with some padding)
     const padding = (rangeTo - rangeFrom) * 0.1;
@@ -164,8 +163,8 @@ export default function Chart({ tweetEvents }: ChartProps) {
       // Skip candles before any tweets (show as no data)
       if (daysSinceTweet === Infinity) continue;
       
-      // Calculate heat and get color
-      const heat = calculateHeat(daysSinceTweet, visibleRangeDays);
+      // Calculate heat and get color (zoom-independent)
+      const heat = calculateHeat(daysSinceTweet);
       const color = interpolateColor(heat);
 
       // Draw dot
@@ -191,7 +190,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
       const daysSinceTweet = findDaysSinceLastTweet(curr.t, tweetTimestamps);
       if (daysSinceTweet === Infinity) continue;
 
-      const heat = calculateHeat(daysSinceTweet, visibleRangeDays);
+      const heat = calculateHeat(daysSinceTweet);
       const color = interpolateColor(heat);
 
       ctx.beginPath();
@@ -575,9 +574,9 @@ export default function Chart({ tweetEvents }: ChartProps) {
     chartRef.current?.timeScale().fitContent();
   }, []);
 
-  // Get current heat label
+  // Get current heat label (zoom-independent, based on founder's typical behavior)
   const heatLabel = getHeatLabel(currentDaysSinceTweet);
-  const currentHeat = calculateHeat(currentDaysSinceTweet, 365); // Use 1 year for badge
+  const currentHeat = calculateHeat(currentDaysSinceTweet);
   const currentHeatColor = interpolateColor(currentHeat);
 
   return (

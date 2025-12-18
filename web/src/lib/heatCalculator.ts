@@ -1,40 +1,61 @@
 /**
- * Adaptive Tweet Heat Calculator
+ * Founder-Normalized Tweet Heat Calculator
  * 
- * Calculates a "heat" value (0-1) based on days since last tweet,
- * where the decay rate adapts to the visible time range.
+ * Calculates a "heat" value (0-1) based on how unusual the current gap is
+ * relative to the founder's typical tweeting pattern.
+ * 
+ * This is ZOOM-INDEPENDENT: the same gap always produces the same color,
+ * preserving fidelity at all timescales.
  */
 
-// Color gradient: Twitter Blue (active) → Red (danger/silent)
+// Color gradient: Green (healthy/active) → Red (danger/silent)
+// This follows intuitive traffic light convention
 export const HEAT_GRADIENT = [
-  { stop: 1.0, color: '#1DA1F2' },  // Twitter Blue (just tweeted)
-  { stop: 0.8, color: '#00CED1' },  // Cyan (very active)
-  { stop: 0.6, color: '#32CD32' },  // Green (healthy)
-  { stop: 0.4, color: '#FFD700' },  // Yellow (getting quiet)
-  { stop: 0.2, color: '#FF8C00' },  // Orange (warning)
-  { stop: 0.0, color: '#DC143C' },  // Red (danger zone)
+  { stop: 1.0, color: '#00C853' },  // Bright Green (just tweeted)
+  { stop: 0.7, color: '#76FF03' },  // Light Green (very active)
+  { stop: 0.5, color: '#FFEB3B' },  // Yellow (getting quiet)
+  { stop: 0.3, color: '#FF9800' },  // Orange (unusual silence)
+  { stop: 0.15, color: '#FF5722' }, // Deep Orange (warning)
+  { stop: 0.0, color: '#D50000' },  // Red (danger zone)
 ];
 
+// Founder-specific constants (pre-computed from historical data)
+// These should eventually come from a config/database per founder
+export const FOUNDER_STATS = {
+  alon: {
+    medianGapDays: 0.8,    // He typically tweets every ~19 hours
+    p90GapDays: 3.2,       // 90th percentile gap
+    p99GapDays: 8.8,       // 99th percentile gap
+    maxHistoricalGapDays: 12.1,  // Before current silence
+  }
+};
+
 /**
- * Calculate heat value with adaptive τ and absolute thresholds
+ * Calculate heat value normalized by founder's typical tweet frequency
+ * 
+ * The formula: heat = exp(-gap / medianGap * k)
+ * 
+ * This means:
+ * - At 0 days: heat = 1.0 (green)
+ * - At median gap (0.8 days): heat ≈ 0.61 (green-yellow)
+ * - At 3x median (2.4 days): heat ≈ 0.22 (orange)
+ * - At 10x median (8 days): heat ≈ 0.007 (deep red)
  * 
  * @param daysSinceTweet - Days since the last tweet
- * @param visibleRangeDays - The visible time range in days (for adaptive scaling)
- * @returns Heat value from 0 (cold/silent) to 1 (hot/active)
+ * @param _visibleRangeDays - IGNORED (kept for API compatibility, will be removed)
+ * @returns Heat value from 0 (danger/silent) to 1 (healthy/active)
  */
-export function calculateHeat(daysSinceTweet: number, visibleRangeDays: number): number {
-  const k = 7; // Tuning constant: it takes ~1/7 of visible range to cool down
-  const tau = Math.max(visibleRangeDays / k, 0.5); // Min tau of 0.5 days to prevent extreme sensitivity
+export function calculateHeat(daysSinceTweet: number, _visibleRangeDays?: number): number {
+  const { medianGapDays } = FOUNDER_STATS.alon;
   
-  let heat = Math.exp(-daysSinceTweet / tau);
+  // Decay constant - tuned so that:
+  // - At median gap: heat ≈ 0.61 (still healthy green-yellow)
+  // - At 3x median: heat ≈ 0.22 (orange warning)
+  // - At 5x median: heat ≈ 0.08 (deep orange/red)
+  const k = 0.5;
   
-  // Absolute thresholds based on Alon's actual data (99th percentile = 8.8 days)
-  // Ensures extreme silences are ALWAYS in danger zone regardless of zoom
-  if (daysSinceTweet > 14) {
-    heat = Math.min(heat, 0.15); // Force into red zone
-  } else if (daysSinceTweet > 7) {
-    heat = Math.min(heat, 0.25); // Force into orange zone
-  }
+  const normalizedGap = daysSinceTweet / medianGapDays;
+  const heat = Math.exp(-normalizedGap * k);
   
   return Math.max(0, Math.min(1, heat));
 }
@@ -149,12 +170,25 @@ export function findDaysSinceLastTweet(
 
 /**
  * Get human-readable label for the current heat state
+ * Based on multiples of the founder's median gap
  */
 export function getHeatLabel(daysSinceTweet: number): { label: string; emoji: string } {
-  if (daysSinceTweet < 1) return { label: 'Active', emoji: '🐦' };
-  if (daysSinceTweet < 3) return { label: 'Recent', emoji: '🟢' };
-  if (daysSinceTweet < 7) return { label: 'Quiet', emoji: '🟡' };
-  if (daysSinceTweet < 14) return { label: 'Warning', emoji: '🟠' };
+  const { medianGapDays, p90GapDays, p99GapDays, maxHistoricalGapDays } = FOUNDER_STATS.alon;
+  
+  // Labels based on how unusual this gap is
+  if (daysSinceTweet < medianGapDays) {
+    return { label: 'Active', emoji: '🟢' };
+  }
+  if (daysSinceTweet < p90GapDays) {
+    return { label: 'Normal', emoji: '🟢' };
+  }
+  if (daysSinceTweet < p99GapDays) {
+    return { label: 'Quiet', emoji: '🟡' };
+  }
+  if (daysSinceTweet < maxHistoricalGapDays) {
+    return { label: 'Warning', emoji: '🟠' };
+  }
+  // Beyond historical max = unprecedented
   return { label: 'Danger Zone', emoji: '🔴' };
 }
 
