@@ -38,9 +38,9 @@ interface TweetClusterDisplay {
 }
 
 const TIMEFRAMES: { label: string; value: Timeframe }[] = [
+  { label: '1m', value: '1m' },
   { label: '15m', value: '15m' },
   { label: '1h', value: '1h' },
-  { label: '4h', value: '4h' },
   { label: '1D', value: '1d' },
 ];
 
@@ -227,6 +227,8 @@ export default function Chart({ tweetEvents }: ChartProps) {
 
     // Draw silence gap lines between clusters with labels at midpoint
     const GAP_THRESHOLD = 24 * 3600; // 24 hours minimum to show gap line
+    const showLabels = visibleSeconds < 86400 * 30; // Less than 30 days visible
+    
     ctx.setLineDash([6, 4]);
     ctx.lineWidth = 1.5;
     
@@ -235,61 +237,46 @@ export default function Chart({ tweetEvents }: ChartProps) {
       const curr = clusters[i];
       
       if (curr.timeSincePrev && curr.timeSincePrev > GAP_THRESHOLD) {
+        // Draw dashed line connecting clusters
         const isNegative = curr.pctSincePrev !== null && curr.pctSincePrev < 0;
-        const lineColor = isNegative ? 'rgba(239, 83, 80, 0.6)' : 'rgba(38, 166, 154, 0.6)';
-        ctx.strokeStyle = lineColor;
+        ctx.strokeStyle = isNegative ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)';
         
         const startX = prev.x + BUBBLE_RADIUS + 4;
+        const startY = prev.y;
         const endX = curr.x - BUBBLE_RADIUS - 4;
-        
-        // Draw dashed line connecting clusters
-        ctx.beginPath();
-        ctx.moveTo(startX, prev.y);
-        ctx.lineTo(endX, curr.y);
-        ctx.stroke();
-        
-        // Calculate midpoint for label
-        const midX = (startX + endX) / 2;
-        const midY = (prev.y + curr.y) / 2;
-        
-        // Build label text
-        const timeLabel = formatTimeGap(curr.timeSincePrev);
-        const pctLabel = curr.pctSincePrev !== null ? formatPctChange(curr.pctSincePrev) : '';
-        const labelText = pctLabel ? `${timeLabel} / ${pctLabel}` : timeLabel;
-        
-        // Measure text for background
-        ctx.font = 'bold 10px system-ui, sans-serif';
-        const textMetrics = ctx.measureText(labelText);
-        const textWidth = textMetrics.width;
-        const textHeight = 14;
-        const padding = 6;
-        
-        // Draw background pill
-        ctx.setLineDash([]);
-        ctx.fillStyle = 'rgba(30, 34, 45, 0.95)';
-        const pillWidth = textWidth + padding * 2;
-        const pillHeight = textHeight + padding;
-        const pillX = midX - pillWidth / 2;
-        const pillY = midY - pillHeight / 2;
+        const endY = curr.y;
         
         ctx.beginPath();
-        ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 4);
-        ctx.fill();
-        
-        // Draw border
-        ctx.strokeStyle = isNegative ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)';
-        ctx.lineWidth = 1;
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
         ctx.stroke();
         
-        // Draw label text
-        ctx.fillStyle = isNegative ? '#EF5350' : '#26A69A';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, midX, midY);
-        
-        // Reset for next iteration
-        ctx.setLineDash([6, 4]);
-        ctx.lineWidth = 1.5;
+        // Draw labels at midpoint of the gap line
+        if (showLabels) {
+          const midX = (startX + endX) / 2;
+          const midY = (startY + endY) / 2;
+          
+          ctx.setLineDash([]); // Reset for text
+          
+          // Time since previous (e.g., "3d")
+          if (curr.timeSincePrev > 3600) {
+            ctx.font = '10px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#787B86';
+            ctx.fillText(formatTimeGap(curr.timeSincePrev), midX, midY - 8);
+          }
+          
+          // Price change (e.g., "-20.6%")
+          if (curr.pctSincePrev !== null) {
+            const pctColor = curr.pctSincePrev >= 0 ? '#26A69A' : '#EF5350';
+            ctx.font = 'bold 11px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = pctColor;
+            ctx.fillText(formatPctChange(curr.pctSincePrev), midX, midY + 6);
+          }
+          
+          ctx.setLineDash([6, 4]); // Restore for next line
+        }
       }
     }
     ctx.setLineDash([]);
@@ -641,6 +628,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
           </button>
         </div>
       </div>
+      
 
       {/* Timeframe selector */}
       <div className="absolute bottom-2 left-2 flex items-center gap-1 z-20">
@@ -685,7 +673,7 @@ export default function Chart({ tweetEvents }: ChartProps) {
 
       {/* Loading indicator */}
       {loading && (
-        <div className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-[#1E222D] px-3 py-1 rounded">
+        <div className="absolute top-14 right-2 z-20 flex items-center gap-2 bg-[#1E222D] px-3 py-1 rounded">
           <div className="w-3 h-3 border-2 border-[#2962FF] border-t-transparent rounded-full animate-spin" />
           <span className="text-xs text-[#787B86]">Loading...</span>
         </div>
