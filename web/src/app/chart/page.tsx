@@ -68,14 +68,6 @@ export default function ChartPage() {
             Data Table
           </Link>
         </div>
-        
-        {/* Tweet bubble toggle */}
-        <div className="flex items-center gap-2 px-2 border-l border-[#2A2E39]">
-          <span className="text-[#787B86] text-xs">Show Tweet Bubbles</span>
-          <button className="w-8 h-4 bg-[#2962FF] rounded-full relative">
-            <span className="absolute right-0.5 top-0.5 w-3 h-3 bg-white rounded-full"></span>
-          </button>
-        </div>
       </div>
 
       {/* Chart area */}
