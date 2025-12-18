@@ -95,6 +95,23 @@ export async function loadStats(): Promise<Stats> {
 }
 
 /**
+ * Load SOL price data for a specific timeframe (for alpha calculation)
+ */
+export async function loadSolPrices(timeframe: Timeframe): Promise<PriceData> {
+  const cacheKey = `sol_${timeframe}`;
+  
+  if (priceCache.has(cacheKey)) {
+    return priceCache.get(cacheKey)!;
+  }
+  
+  const response = await fetch(`/data/sol_prices_${timeframe}.json`);
+  const data: PriceData = await response.json();
+  
+  priceCache.set(cacheKey, data);
+  return data;
+}
+
+/**
  * Convert price data to Lightweight Charts format
  */
 export function toCandlestickData(prices: PriceData) {
