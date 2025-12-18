@@ -1,89 +1,57 @@
-# Tweet-Price Correlation Analyzer
+# $PUMP Tweet-Price Correlation Analyzer
 
-**Visualize and analyze the correlation between crypto founder tweets and token price movements.**
+**Does Alon's tweeting correlate with $PUMP price?**
 
-An open-source tool for tracking how founder activity on X (Twitter) correlates with token price action. Built for researchers, traders, and anyone curious about the signal (or noise) in founder communication patterns.
+A tool to visualize and analyze the relationship between [@a1lon9](https://x.com/a1lon9)'s tweets and $PUMP token price movements.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+## 🔗 Live Site
 
-## 🎯 What This Does
+**https://tweet-price-rohun-voras-projects.vercel.app**
 
-This project answers a simple question: **Does it matter when a crypto founder tweets?**
+- `/chart` - Interactive candlestick chart with tweet markers
+- `/data` - Stats panel and data table
 
-- **Fetches tweets** from configured founder accounts via X API
-- **Collects price data** from GeckoTerminal (DEX tokens) and CoinGecko (CEX tokens)
-- **Aligns tweets with prices** to calculate exact price at tweet time and price changes after
-- **Visualizes everything** in an interactive TradingView-style chart with:
-  - Founder avatar bubbles at tweet locations
-  - Alpha overlay showing performance vs market (SOL)
-  - Silence gap indicators during quiet periods
-  - Statistical analysis of tweet-day vs non-tweet-day returns
+## 📊 What It Shows
 
-## 📊 Currently Tracking
-
-| Token | Founder | Network | Status |
-|-------|---------|---------|--------|
-| PUMP | [@a1lon9](https://x.com/a1lon9) | Solana | ✅ Full data |
-| JUP | [@weremeow](https://x.com/weremeow) | Solana | ✅ Full data |
-| LAUNCHCOIN | [@pasternak](https://x.com/pasternak) | Solana | ✅ Full data |
-| USELESS | [@theunipcs](https://x.com/theunipcs) | Solana | ✅ Full data |
-| HYPE | [@chameleon_jeff](https://x.com/chameleon_jeff) | Hyperliquid | ✅ Daily data |
-| PENGU | [@LucaNetz](https://x.com/LucaNetz) | Solana | ✅ Daily data |
-| MONAD | [@keoneHD](https://x.com/keoneHD) | Monad | ✅ Daily data |
-| ASTER | [@cz_binance](https://x.com/cz_binance) | BNB | ✅ Daily data |
-| ICP | [@dominic_w](https://x.com/dominic_w) | ICP | ✅ Daily data |
-| ADA | [@IOHK_Charles](https://x.com/IOHK_Charles) | Cardano | ✅ Daily data |
-
-## 🖥️ Live Demo
-
-The web frontend is a Next.js app that can be deployed to Vercel. Features:
-
-- **Interactive candlestick chart** with multiple timeframes (1m, 15m, 1h, 1D)
-- **Tweet markers** showing founder activity overlaid on price
-- **Alpha indicator** showing token performance vs SOL (market benchmark)
-- **Hover tooltips** with tweet text, engagement metrics, and price impact
-- **Click to open** the original tweet on X
+- **TradingView-style chart** with $PUMP price candles
+- **Tweet markers** as avatar bubbles overlaid on the price chart
+- **Silence gaps** - dashed lines showing quiet periods with % price change
+- **Smart clustering** - nearby tweets grouped into single markers
+- **Multiple timeframes** - 1m, 15m, 1h, 1D views
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-
 - Python 3.9+
 - Node.js 18+
-- X API Bearer Token (for fetching tweets)
+- X API Bearer Token
 
-### 1. Clone and Setup
+### Setup
 
 ```bash
-git clone https://github.com/yourusername/tweet-price.git
+# Clone
+git clone https://github.com/rohunvora/tweet-price.git
 cd tweet-price
 
-# Python environment
+# Python setup
 python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+source venv/bin/activate
 pip install -r requirements.txt
 
-# Create .env file with your X API token
-echo "X_BEARER_TOKEN=your_bearer_token_here" > .env
+# Create .env with your X API token
+echo "X_BEARER_TOKEN=your_token_here" > .env
 ```
 
-### 2. Fetch Data
+### Fetch Data
 
 ```bash
-# Fetch tweets for all assets (or use --asset pump for specific one)
-python scripts/fetch_tweets.py
-
-# Fetch price data
-python scripts/fetch_prices.py
-
-# Align tweets with prices (calculates price at tweet time + changes)
-python scripts/align_tweets.py
-
-# Export to static JSON for frontend
-python scripts/export_static.py
+python scripts/fetch_tweets.py      # Fetch tweets from @a1lon9
+python scripts/fetch_prices.py      # Fetch $PUMP price data
+python scripts/align_tweets.py      # Align tweets with prices
+python scripts/export_static.py     # Export JSON for frontend
 ```
 
-### 3. Run the Web App
+### Run Frontend
 
 ```bash
 cd web
@@ -91,146 +59,68 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open http://localhost:3000
 
 ## 📁 Project Structure
 
 ```
 tweet-price/
-├── scripts/                 # Python data pipeline
-│   ├── config.py           # Asset configuration (founders, networks, colors)
+├── scripts/
+│   ├── config.py           # Configuration (pool address, API settings)
 │   ├── fetch_tweets.py     # X API tweet fetcher
-│   ├── fetch_prices.py     # GeckoTerminal/CoinGecko price fetcher
-│   ├── align_tweets.py     # Aligns tweets with price data
-│   ├── export_static.py    # Exports JSON for frontend
-│   ├── compute_stats.py    # Statistical analysis
-│   └── cache_avatars.py    # Downloads founder avatars
+│   ├── fetch_prices.py     # GeckoTerminal price fetcher
+│   ├── align_tweets.py     # Aligns tweets with prices
+│   ├── export_static.py    # Exports static JSON
+│   └── compute_stats.py    # Statistical calculations
 │
-├── data/                    # Raw data storage (gitignored)
-│   └── {asset}/            # Per-asset data
-│       ├── tweets.json     # Raw tweets
-│       ├── prices.db       # SQLite price database
-│       └── tweet_events.json  # Aligned tweet-price events
+├── data/                   # Raw data (gitignored)
+│   ├── tweets.json        # Fetched tweets
+│   ├── prices.db          # SQLite price database
+│   └── tweet_events.json  # Aligned data
 │
-├── web/                     # Next.js frontend
+├── web/                    # Next.js frontend
 │   ├── src/
-│   │   ├── app/            # Pages (chart, data table)
-│   │   ├── components/     # React components
-│   │   │   ├── Chart.tsx   # Main TradingView-style chart
-│   │   │   ├── DataTable.tsx
-│   │   │   └── StatsPanel.tsx
-│   │   └── lib/            # Utilities
-│   │       ├── dataLoader.ts
-│   │       ├── heatCalculator.ts  # Alpha calculations
-│   │       └── types.ts
+│   │   ├── app/           # Pages
+│   │   │   ├── chart/     # Chart page
+│   │   │   └── data/      # Data table page
+│   │   ├── components/
+│   │   │   ├── Chart.tsx      # Main chart component
+│   │   │   ├── DataTable.tsx  # Tweet data table
+│   │   │   └── StatsPanel.tsx # Statistics display
+│   │   └── lib/
+│   │       ├── dataLoader.ts  # Data fetching utilities
+│   │       ├── formatters.ts  # Format helpers
+│   │       └── types.ts       # TypeScript types
 │   │
-│   └── public/data/        # Static JSON served to frontend
-│       ├── assets.json     # Asset index
-│       └── {asset}/        # Per-asset price & tweet data
+│   └── public/data/       # Static JSON for frontend
+│       ├── tweet_events.json
+│       ├── stats.json
+│       └── prices_*.json
 │
-├── analysis/               # Python analysis scripts
-│   ├── correlator.py      # Statistical correlation analysis
-│   └── visualize.py       # Plotly visualizations
-│
-└── output/                 # Generated reports/charts
+└── vercel.json            # Vercel deployment config
 ```
 
-## 🔧 Configuration
+## 🧮 How It Works
 
-Add new assets in `scripts/config.py`:
+1. **Fetch tweets** from @a1lon9 via X API v2
+2. **Fetch prices** from GeckoTerminal (Solana DEX data)
+3. **Align** each tweet with the price at that exact minute
+4. **Calculate** 1h and 24h price changes after each tweet
+5. **Visualize** on an interactive chart with the tweet markers
 
-```python
-ASSETS = {
-    "pump": {
-        "name": "PUMP",
-        "founder": "a1lon9",           # X username
-        "price_source": "geckoterminal",  # or "coingecko"
-        "network": "solana",
-        "pool_address": "2uF4Xh61...",  # For GeckoTerminal
-        "coingecko_id": None,           # For CoinGecko
-        "color": "#9945FF",
-    },
-    # Add more assets...
-}
-```
+### Chart Features
 
-## 📈 Current Progress
-
-### ✅ Completed
-
-- [x] Multi-asset architecture (easily add new tokens/founders)
-- [x] Tweet fetching with incremental updates (only fetches new tweets)
-- [x] Price data from GeckoTerminal (1m resolution) and CoinGecko (daily)
-- [x] Tweet-price alignment with 1h and 24h price change calculations
-- [x] Interactive chart with lightweight-charts library
-- [x] Alpha overlay (performance vs SOL market benchmark)
-- [x] Smart tweet clustering (groups nearby tweets visually)
-- [x] Silence gap visualization (shows quiet periods between tweets)
-- [x] Hover tooltips with tweet content and engagement
-- [x] Click-through to original tweets
-- [x] Multiple timeframe support (1m, 15m, 1h, 1D)
-- [x] Chunked 1m data loading (lazy loads by month for performance)
-- [x] Static JSON export for Vercel deployment
-- [x] Asset index generation for multi-asset frontend
-
-### 🚧 In Progress
-
-- [ ] Asset selector dropdown in frontend (backend ready)
-- [ ] Stats panel showing correlation metrics
-- [ ] Data table view with all aligned tweets
-
-### 📋 Planned Features
-
-- [ ] **Sentiment analysis** - Classify tweet sentiment and correlate with price
-- [ ] **Alert system** - Notify when founder goes silent or tweets
-- [ ] **Backtesting** - Simulate trading strategies based on tweet signals
-- [ ] **Multi-founder comparison** - Compare tweet patterns across founders
-- [ ] **Engagement correlation** - Does likes/RT count correlate with price impact?
-- [ ] **Time-of-day analysis** - When do high-impact tweets happen?
-- [ ] **Thread detection** - Identify tweet threads vs standalone tweets
-- [ ] **Historical patterns** - Find similar past tweet-price patterns
-- [ ] **API endpoint** - Serve data via REST API for external tools
-
-## 🧮 Methodology
-
-### Price at Tweet Time
-
-For each tweet, we record the **candle close price** at the minute boundary. This provides a consistent, reproducible reference point.
-
-### Alpha Calculation
-
-Alpha measures token performance relative to the broader market (SOL):
-
-```
-alpha = token_return - market_return
-```
-
-- **Green line**: Token outperforming the market
-- **Red line**: Token underperforming the market
-
-### Statistical Significance
-
-Correlation metrics include p-values. A p-value < 0.05 indicates statistical significance, but remember: **correlation does not imply causation**. Founders might tweet *because* price is moving, not the other way around.
-
-## 🤝 Contributing
-
-Contributions welcome! Some ideas:
-
-- Add new assets to track
-- Improve the frontend visualization
-- Add new statistical analyses
-- Build sentiment analysis pipeline
-- Create alert/notification system
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
+- **Tweet bubbles** - Avatar markers at price level when tweets occurred
+- **Clustering** - Multiple tweets near each other merge into one bubble with count badge
+- **Gap lines** - Dashed lines between clusters showing:
+  - Time gap (e.g., "3d")
+  - Price change during silence (e.g., "-20.6%")
+- **Adaptive sizing** - Markers and labels scale based on zoom level
 
 ## ⚠️ Disclaimer
 
-This tool is for **research and educational purposes only**. Nothing here constitutes financial advice. Crypto markets are highly volatile and founder tweets are just one of many factors affecting price. Always do your own research.
+This is for **research and educational purposes only**. Not financial advice. Correlation ≠ causation. DYOR.
 
 ---
 
-Built with curiosity about markets and founder psychology 🧠📊
-
+Built to explore whether founder activity correlates with token price 📊
