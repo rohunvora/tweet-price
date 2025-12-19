@@ -7,6 +7,9 @@ on:
   workflow_dispatch:
     # Allow manual trigger from GitHub UI
 
+env:
+  PYTHONUNBUFFERED: '1'  # Real-time output for all Python scripts
+
 jobs:
   update-data:
     runs-on: ubuntu-latest
@@ -41,15 +44,16 @@ jobs:
       - name: Create data directory
         run: mkdir -p data
 
-      - name: Check if database exists
+      - name: Check if database exists (from cache)
         id: check-db
         run: |
           if [ -f "data/analytics.duckdb" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Database found ($(du -h data/analytics.duckdb | cut -f1))"
+            SIZE=$(du -h data/analytics.duckdb | cut -f1)
+            echo "✅ Database found in cache ($SIZE)"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Database not found in cache"
+            echo "⚠️ Database not found in cache"
           fi
 
       - name: Download database from release (if not cached)
@@ -57,59 +61,180 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Attempting to download database from latest release..."
-          # Try to download from the 'database' release tag
+          echo "📥 Downloading database from release..."
           if gh release download database --pattern "analytics.duckdb" --dir data/ 2>/dev/null; then
-            echo "Downloaded database from release"
-            ls -lh data/analytics.duckdb
+            SIZE=$(du -h data/analytics.duckdb | cut -f1)
+            echo "✅ Downloaded database from release ($SIZE)"
           else
-            echo "No database release found - workflow will skip data fetch"
+            echo "❌ No database release found!"
             echo "To bootstrap: create a release tagged 'database' with analytics.duckdb attached"
+            exit 1
           fi
 
-      - name: Recheck database after download
-        id: recheck-db
+      - name: Verify database and show status
+        id: verify-db
         run: |
-          if [ -f "data/analytics.duckdb" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+          cd scripts
+          python -c "
+import sys
+from db import get_connection
+import json
+from datetime import datetime, timezone
 
-      - name: Fetch new tweets (incremental)
-        if: steps.recheck-db.outputs.exists == 'true'
+print('=' * 60)
+print('DATABASE STATUS BEFORE UPDATE')
+print('=' * 60)
+print(f'Current time: {datetime.now(timezone.utc).strftime(\"%Y-%m-%d %H:%M UTC\")}')
+print()
+
+conn = get_connection()
+
+with open('assets.json') as f:
+    assets = [a for a in json.load(f)['assets'] if a.get('enabled', True)]
+
+all_ok = True
+for asset in assets:
+    asset_id = asset['id']
+
+    tweet_result = conn.execute('''
+        SELECT MAX(timestamp) as latest, COUNT(*) as total
+        FROM tweets WHERE asset_id = ?
+    ''', [asset_id]).fetchone()
+
+    price_result = conn.execute('''
+        SELECT MAX(timestamp) as latest, COUNT(*) as total
+        FROM prices WHERE asset_id = ? AND timeframe = '1h'
+    ''', [asset_id]).fetchone()
+
+    tweet_latest = tweet_result[0] if tweet_result[0] else 'none'
+    price_latest = price_result[0] if price_result[0] else 'none'
+
+    print(f'{asset_id.upper():10} | Tweets: {tweet_result[1]:4} (latest: {tweet_latest})')
+    print(f'           | Prices: {price_result[1]:5} 1h candles (latest: {price_latest})')
+
+    if price_result[1] == 0:
+        print(f'           | ⚠️  WARNING: No price data!')
+        all_ok = False
+    print()
+
+conn.close()
+
+if not all_ok:
+    print('⚠️  Some assets have missing data - fetch may take longer')
+else:
+    print('✅ All assets have data')
+"
+          echo "db_verified=true" >> $GITHUB_OUTPUT
+
+      - name: Fetch new tweets
         env:
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
         run: |
+          echo "🐦 Fetching new tweets..."
           cd scripts
-          python fetch_tweets.py
+          python fetch_tweets.py 2>&1 || echo "⚠️ Tweet fetch had errors (continuing anyway)"
         continue-on-error: true
+        timeout-minutes: 10
 
-      - name: Fetch new prices (incremental)
-        if: steps.recheck-db.outputs.exists == 'true'
+      - name: Fetch new prices
         env:
           BIRDEYE_API_KEY: ${{ secrets.BIRDEYE_API_KEY }}
         run: |
+          echo "📊 Fetching new prices..."
           cd scripts
-          python fetch_prices.py
+          python fetch_prices.py 2>&1 || echo "⚠️ Price fetch had errors (continuing anyway)"
         continue-on-error: true
+        timeout-minutes: 15
 
       - name: Compute statistics
-        if: steps.recheck-db.outputs.exists == 'true'
         run: |
+          echo "📈 Computing statistics..."
           cd scripts
-          python compute_stats.py
+          python compute_stats.py 2>&1 || echo "⚠️ Stats computation had errors"
         continue-on-error: true
+        timeout-minutes: 5
 
       - name: Export static data
-        if: steps.recheck-db.outputs.exists == 'true'
+        id: export
         run: |
+          echo "📦 Exporting static JSON files..."
           cd scripts
-          python export_static.py
+          python export_static.py 2>&1
+
+          # Verify export produced files
+          if [ -d "../web/public/static/pump" ]; then
+            echo "✅ Export completed"
+            echo "export_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Export failed - no output files!"
+            echo "export_ok=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        timeout-minutes: 5
+
+      - name: Validate exported data
+        if: steps.export.outputs.export_ok == 'true'
+        run: |
+          echo "🔍 Validating exported data..."
+          cd scripts
+          python -c "
+import json
+import os
+from pathlib import Path
+
+static_dir = Path('../web/public/static')
+errors = []
+
+with open('assets.json') as f:
+    assets = [a for a in json.load(f)['assets'] if a.get('enabled', True)]
+
+print()
+for asset in assets:
+    asset_id = asset['id']
+    asset_dir = static_dir / asset_id
+
+    # Check required files exist
+    required = ['tweet_events.json', 'prices_1h.json', 'prices_1d.json', 'stats.json']
+    missing = [f for f in required if not (asset_dir / f).exists()]
+
+    if missing:
+        errors.append(f'{asset_id}: missing {missing}')
+        print(f'❌ {asset_id.upper()}: missing {missing}')
+        continue
+
+    # Check tweet_events has data
+    with open(asset_dir / 'tweet_events.json') as f:
+        events = json.load(f)
+        tweet_count = events.get('count', 0)
+
+    # Check prices have data
+    with open(asset_dir / 'prices_1h.json') as f:
+        prices = json.load(f)
+        price_count = prices.get('count', 0)
+
+    if tweet_count == 0:
+        errors.append(f'{asset_id}: no tweets')
+        print(f'⚠️  {asset_id.upper()}: {tweet_count} tweets, {price_count} price candles')
+    elif price_count == 0:
+        errors.append(f'{asset_id}: no prices')
+        print(f'❌ {asset_id.upper()}: {tweet_count} tweets, {price_count} price candles')
+    else:
+        print(f'✅ {asset_id.upper()}: {tweet_count} tweets, {price_count} price candles')
+
+print()
+if errors:
+    print(f'⚠️  Validation warnings: {len(errors)}')
+    for e in errors:
+        print(f'   - {e}')
+else:
+    print('✅ All assets validated successfully')
+"
 
       - name: Generate timestamp
         run: |
-          echo "{\"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"source\": \"github-actions\"}" > web/public/static/last_updated.json
+          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "{\"timestamp\": \"$TIMESTAMP\", \"source\": \"github-actions\"}" > web/public/static/last_updated.json
+          echo "⏰ Timestamp: $TIMESTAMP"
 
       - name: Check for changes
         id: check-changes
@@ -117,11 +242,11 @@ jobs:
           git add -A
           if git diff --cached --quiet; then
             echo "changed=false" >> $GITHUB_OUTPUT
-            echo "No changes to commit"
+            echo "ℹ️  No changes to commit"
           else
             echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Changes detected:"
-            git diff --cached --stat
+            echo "📝 Changes detected:"
+            git diff --cached --stat | head -20
           fi
 
       - name: Commit and push changes
@@ -129,22 +254,36 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: hourly data update $(date -u +%Y-%m-%d\ %H:%M\ UTC)"
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
+          git commit -m "chore: hourly data update $TIMESTAMP"
           git push
+          echo "✅ Changes pushed to repository"
 
       - name: Save database to cache
-        if: steps.recheck-db.outputs.exists == 'true'
         uses: actions/cache/save@v4
         with:
           path: data/analytics.duckdb
           key: analytics-db-${{ github.run_id }}
 
-      - name: Upload database to release (for persistence)
-        if: steps.recheck-db.outputs.exists == 'true'
+      - name: Upload database to release (backup)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Update the database release with the new version
-          # This ensures the database persists even if cache is evicted
+          echo "💾 Backing up database to release..."
           gh release upload database data/analytics.duckdb --clobber 2>/dev/null || \
             gh release create database data/analytics.duckdb --title "Database Backup" --notes "Auto-updated by hourly workflow"
+          echo "✅ Database backed up"
+
+      - name: Summary
+        run: |
+          echo ""
+          echo "========================================"
+          echo "           WORKFLOW COMPLETE"
+          echo "========================================"
+          if [ "${{ steps.check-changes.outputs.changed }}" == "true" ]; then
+            echo "✅ Data updated and pushed"
+            echo "🚀 Vercel will auto-deploy shortly"
+          else
+            echo "ℹ️  No new data to update"
+          fi
+          echo "========================================"
