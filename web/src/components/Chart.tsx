@@ -329,9 +329,6 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     const pctFontSize = Math.round(9 + 4 * zoomFactor);
     const labelSpacing = Math.round(6 + 4 * zoomFactor);
     
-    // Only draw gap annotations when zoomed in enough (prevents clutter on mobile)
-    const shouldDrawGaps = visibleSeconds < 30 * 86400; // Only when < 30 days visible
-    
     ctx.setLineDash([6, 4]);
     ctx.lineWidth = 1.5;
     
@@ -339,7 +336,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       const prev = clusters[i - 1];
       const curr = clusters[i];
       
-      if (shouldDrawGaps && curr.timeSincePrev && curr.timeSincePrev > SILENCE_GAP_THRESHOLD) {
+      if (curr.timeSincePrev && curr.timeSincePrev > SILENCE_GAP_THRESHOLD) {
         const isNegative = curr.pctSincePrev !== null && curr.pctSincePrev < 0;
         ctx.strokeStyle = isNegative ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)';
         
@@ -378,7 +375,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     // -------------------------------------------------------------------------
     // Draw ongoing silence indicator (from last tweet to current price)
     // -------------------------------------------------------------------------
-    if (shouldDrawGaps && clusters.length > 0) {
+    if (clusters.length > 0) {
       const lastCluster = clusters[clusters.length - 1];
       const candles = candlesRef.current;
       
