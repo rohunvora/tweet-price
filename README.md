@@ -1,47 +1,54 @@
 # Tweet-Price Correlation Analyzer
 
-**Do founder tweets correlate with token price movements?**
+**Do founder tweets move token prices?**
 
-A multi-asset analytics platform that visualizes and analyzes the relationship between crypto project founders' tweets and their token's price action. Track multiple projects across Solana, Hyperliquid, BSC, and Monad.
+A multi-asset analytics platform that visualizes and analyzes the relationship between crypto project founders' tweets and their token's price action.
 
 ## Live Site
 
 **https://tweet-price-rohun-voras-projects.vercel.app**
 
-- `/chart` - Interactive candlestick chart with tweet markers
-- `/data` - Tweet data table with price impact analysis
+## Current State
 
-## Currently Tracking
+### What's Built
+- **Interactive chart** with TradingView-style candlesticks + tweet markers as avatar bubbles
+- **Data table** sorted by price impact - instantly see which tweets moved price most
+- **7 assets tracked** across 4 networks (Solana, Hyperliquid, BSC, Monad)
+- **1,346 tweet events** with aligned price data
+- **Multi-source price fetching** (GeckoTerminal, Birdeye, CoinGecko, Hyperliquid)
+- **Static export** for fast CDN delivery via Vercel
+
+### Assets Tracked
 
 | Token | Founder | Network | Tweets |
 |-------|---------|---------|--------|
 | PUMP | [@a1lon9](https://x.com/a1lon9) | Solana | 102 |
-| USELESS | [@theunipcs](https://x.com/theunipcs) | Solana | 411 |
+| USELESS | [@theunipcs](https://x.com/theunipcs) | Solana | 420 |
 | JUP | [@weremeow](https://x.com/weremeow) | Solana | 343 |
 | ASTER | [@cz_binance](https://x.com/cz_binance) | BSC | 306 |
 | LAUNCHCOIN | [@pasternak](https://x.com/pasternak) | Solana | 81 |
-| MONAD | [@keoneHD](https://x.com/keoneHD) | Monad | 60 |
+| MON | [@keoneHD](https://x.com/keoneHD) | Monad | 60 |
 | HYPE | [@chameleon_jeff](https://x.com/chameleon_jeff) | Hyperliquid | 34 |
 
 ## Features
 
-### Interactive Chart
+### Chart (`/chart`)
 - **TradingView-style candlesticks** with multiple timeframes (1m, 15m, 1h, 1D)
-- **Tweet markers** as avatar bubbles overlaid on price
+- **Tweet markers** as founder avatar bubbles overlaid on price
 - **Silence gaps** - dashed lines showing quiet periods with % price change
-- **Smart clustering** - nearby tweets grouped into single markers with count badges
+- **Smart clustering** - nearby tweets grouped with count badges
 - **Click-to-tweet** - click any marker to open the original tweet
 
-### Data Analysis (`/data`)
-- **Sortable data table** - default sorted by 24h impact (biggest moves first)
+### Data Table (`/data`)
+- **Sortable columns** - default sorted by 24h impact (biggest moves first)
 - **Tweet Days stats** - avg return and win rate when founder tweets
-- **Price impact tracking** - 1h and 24h % change after each tweet
-- **Clickable tweets** - click any row to open the original tweet on X
+- **Price impact** - 1h and 24h % change after each tweet (green/red)
+- **Clickable tweets** - click any row to open original on X
 - **Search & export** - filter tweets, export full dataset to CSV
 
 ### Multi-Asset Support
-- **Asset selector** - switch between tracked projects
-- **Per-asset statistics** - independent analysis for each token
+- **Asset selector** dropdown to switch between tracked projects
+- **Per-asset statistics** computed independently
 - **Multi-network** - Solana, Hyperliquid, BSC, Monad
 
 ## Quick Start
@@ -121,12 +128,12 @@ tweet-price/
 ├── web/                    # Next.js frontend
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── chart/      # Chart page
+│   │   │   ├── chart/      # Chart page with candlesticks + tweet markers
 │   │   │   └── data/       # Data table page
 │   │   ├── components/
 │   │   │   ├── Chart.tsx       # TradingView-style chart
-│   │   │   ├── DataTable.tsx   # Virtualized tweet table
-│   │   │   ├── StatsPanel.tsx  # Statistics dashboard
+│   │   │   ├── DataTable.tsx   # Sortable tweet table
+│   │   │   ├── StatsPanel.tsx  # Statistics display
 │   │   │   └── AssetSelector.tsx
 │   │   └── lib/
 │   │       ├── dataLoader.ts   # Data fetching
@@ -137,8 +144,7 @@ tweet-price/
 │       ├── assets.json
 │       └── {asset_id}/
 │           ├── prices_*.json
-│           ├── tweet_events.json
-│           └── stats.json
+│           └── tweet_events.json
 │
 └── vercel.json             # Deployment config
 ```
@@ -154,9 +160,8 @@ tweet-price/
 3. **Outlier detection** - 5-sigma filtering removes sniper bot trades
 4. **Align** each tweet with the price candle at that exact minute
 5. **Calculate** 1h and 24h price changes after each tweet
-6. **Statistical analysis** - t-tests, correlation, win rates
-7. **Export** to static JSON for fast CDN delivery
-8. **Visualize** on interactive chart with tweet markers
+6. **Export** to static JSON for fast CDN delivery
+7. **Visualize** on interactive chart with tweet markers
 
 ## Adding a New Asset
 
@@ -182,11 +187,18 @@ Then run the fetch scripts to populate data.
 
 ## Tech Stack
 
-**Backend:** Python, DuckDB, pandas, httpx
-**Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS v4
-**Charts:** lightweight-charts (TradingView)
-**Tables:** TanStack React Table + React Virtual
-**Deployment:** Vercel
+**Backend:** Python, DuckDB, pandas, httpx  
+**Frontend:** Next.js 15, React 19, TypeScript, Tailwind CSS v4  
+**Charts:** lightweight-charts (TradingView)  
+**Tables:** TanStack React Table  
+**Deployment:** Vercel (static export)
+
+## What's Next
+
+- [ ] Silent Days comparison (avg return when founder doesn't tweet)
+- [ ] Market cap display instead of/alongside price
+- [ ] More assets based on community requests
+- [ ] Historical backfill for older assets
 
 ## Disclaimer
 
