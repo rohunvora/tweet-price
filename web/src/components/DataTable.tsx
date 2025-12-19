@@ -53,25 +53,6 @@ function computeTweetDayStats(events: TweetEvent[]) {
   };
 }
 
-/**
- * Get heat-map background color based on percentage change
- * Subtle green/red tint that scales with magnitude
- */
-function getHeatmapBg(change: number | null): string {
-  if (change === null) return 'transparent';
-  
-  // Clamp to ±30% for color intensity
-  const clamped = Math.max(-30, Math.min(30, change));
-  const intensity = Math.abs(clamped) / 30; // 0 to 1
-  
-  if (change >= 0) {
-    // Green tint
-    return `rgba(63, 185, 80, ${intensity * 0.25})`;
-  } else {
-    // Red tint
-    return `rgba(248, 81, 73, ${intensity * 0.25})`;
-  }
-}
 
 /**
  * Tweet Days Stats Component
@@ -188,7 +169,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
       sortingFn: 'basic',
     }),
     
-    // % 1h column with heat-map background, neutral text color
+    // % 1h column - simple colored text
     columnHelper.accessor('change_1h_pct', {
       header: '1H',
       cell: info => {
@@ -196,10 +177,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
         if (change === null) return <span className="text-[#6E7681]">—</span>;
         const isPositive = change >= 0;
         return (
-          <span 
-            className="font-mono text-sm px-2 py-1 rounded text-[#C9D1D9]"
-            style={{ backgroundColor: getHeatmapBg(change) }}
-          >
+          <span className={`font-mono text-sm ${isPositive ? 'text-[#3FB950]' : 'text-[#F85149]'}`}>
             {isPositive ? '+' : ''}{change.toFixed(1)}%
           </span>
         );
@@ -207,7 +185,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
       sortingFn: 'basic',
     }),
     
-    // % 24h column with heat-map background, neutral text color
+    // % 24h column - simple colored text, slightly bolder
     columnHelper.accessor('change_24h_pct', {
       header: '24H',
       cell: info => {
@@ -215,10 +193,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
         if (change === null) return <span className="text-[#6E7681]">—</span>;
         const isPositive = change >= 0;
         return (
-          <span 
-            className="font-mono text-sm font-semibold px-2 py-1 rounded text-[#C9D1D9]"
-            style={{ backgroundColor: getHeatmapBg(change) }}
-          >
+          <span className={`font-mono text-sm font-semibold ${isPositive ? 'text-[#3FB950]' : 'text-[#F85149]'}`}>
             {isPositive ? '+' : ''}{change.toFixed(1)}%
           </span>
         );
