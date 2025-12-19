@@ -99,20 +99,37 @@ def export_timeframe(
         WHERE asset_id = ? AND timeframe = ?
         ORDER BY timestamp
     """, [asset_id, timeframe])
-    
+
     candles = []
+    seen_timestamps = set()
+    duplicates_skipped = 0
+
     for row in cursor.fetchall():
         ts, o, h, l, c, v = row
+        # Convert to Unix timestamp
+        ts_epoch = int(ts.timestamp()) if hasattr(ts, 'timestamp') else ts
+
+        # Skip duplicate timestamps (caused by DST transitions)
+        # When clocks "spring forward", two different wall-clock hours
+        # can map to the same Unix timestamp
+        if ts_epoch in seen_timestamps:
+            duplicates_skipped += 1
+            continue
+        seen_timestamps.add(ts_epoch)
+
         # Compact format for smaller files
         candles.append({
-            "t": int(ts.timestamp()) if hasattr(ts, 'timestamp') else ts,
+            "t": ts_epoch,
             "o": round(o, 8) if o else 0,
             "h": round(h, 8) if h else 0,
             "l": round(l, 8) if l else 0,
             "c": round(c, 8) if c else 0,
             "v": round(v, 2) if v else 0,
         })
-    
+
+    if duplicates_skipped > 0:
+        print(f"    (Skipped {duplicates_skipped} duplicate timestamps - DST artifacts)")
+
     if not candles:
         return 0
     
@@ -150,11 +167,14 @@ def export_1m_chunked(
         ORDER BY timestamp
     """, [asset_id])
     
-    # Group by month
+    # Group by month, deduplicating DST artifacts
     months = {}
+    seen_timestamps = set()
+    duplicates_skipped = 0
+
     for row in cursor.fetchall():
         ts, o, h, l, c, v = row
-        
+
         if hasattr(ts, 'strftime'):
             month_key = ts.strftime("%Y-%m")
             ts_epoch = int(ts.timestamp())
@@ -162,10 +182,16 @@ def export_1m_chunked(
             dt = datetime.utcfromtimestamp(ts)
             month_key = dt.strftime("%Y-%m")
             ts_epoch = ts
-        
+
+        # Skip duplicate timestamps (caused by DST transitions)
+        if ts_epoch in seen_timestamps:
+            duplicates_skipped += 1
+            continue
+        seen_timestamps.add(ts_epoch)
+
         if month_key not in months:
             months[month_key] = []
-        
+
         months[month_key].append({
             "t": ts_epoch,
             "o": round(o, 8) if o else 0,
@@ -174,6 +200,9 @@ def export_1m_chunked(
             "c": round(c, 8) if c else 0,
             "v": round(v, 2) if v else 0,
         })
+
+    if duplicates_skipped > 0:
+        print(f"    (Skipped {duplicates_skipped} duplicate 1m timestamps - DST artifacts)")
     
     if not months:
         return 0
