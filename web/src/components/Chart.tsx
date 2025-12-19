@@ -823,33 +823,56 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
             });
           } else if (previousRange) {
             // Manual timeframe switch: preserve center position (TradingView pattern)
-            // Stay looking at the same time region, just with different candle resolution
-            const prevCenter = ((previousRange.from as number) + (previousRange.to as number)) / 2;
-            const prevSpan = (previousRange.to as number) - (previousRange.from as number);
-            const newFrom = prevCenter - prevSpan / 2;
-            const newTo = prevCenter + prevSpan / 2;
-            chartRef.current.timeScale().setVisibleRange({
-              from: newFrom as Time,
-              to: newTo as Time
+            // Use requestAnimationFrame to let chart settle after setData
+            const candles = priceData.candles;
+            const dataStart = candles[0].t;
+            const dataEnd = candles[candles.length - 1].t;
+
+            requestAnimationFrame(() => {
+              if (!chartRef.current) return;
+
+              const prevCenter = ((previousRange.from as number) + (previousRange.to as number)) / 2;
+              const prevSpan = (previousRange.to as number) - (previousRange.from as number);
+              let newFrom = prevCenter - prevSpan / 2;
+              let newTo = prevCenter + prevSpan / 2;
+
+              // Clamp range to actual data bounds to avoid null coordinate errors
+              if (newFrom < dataStart) {
+                newFrom = dataStart;
+                newTo = Math.min(dataStart + prevSpan, dataEnd);
+              }
+              if (newTo > dataEnd) {
+                newTo = dataEnd;
+                newFrom = Math.max(dataEnd - prevSpan, dataStart);
+              }
+
+              chartRef.current.timeScale().setVisibleRange({
+                from: newFrom as Time,
+                to: newTo as Time
+              });
             });
           } else {
             // Initial load: smart default view
-            // When fitContent() squeezes too many candles, they become invisible
+            // Use requestAnimationFrame to let chart settle after setData
             const candles = priceData.candles;
             const MAX_VISIBLE_CANDLES = 500;
 
-            if (candles.length > MAX_VISIBLE_CANDLES) {
-              // Show last N candles to ensure visibility
-              const fromCandle = candles[candles.length - MAX_VISIBLE_CANDLES];
-              const toCandle = candles[candles.length - 1];
-              const padding = (toCandle.t - fromCandle.t) * 0.05;
-              chartRef.current.timeScale().setVisibleRange({
-                from: fromCandle.t as Time,
-                to: (toCandle.t + padding) as Time,
-              });
-            } else {
-              chartRef.current.timeScale().fitContent();
-            }
+            requestAnimationFrame(() => {
+              if (!chartRef.current) return;
+
+              if (candles.length > MAX_VISIBLE_CANDLES) {
+                // Show last N candles to ensure visibility
+                const fromCandle = candles[candles.length - MAX_VISIBLE_CANDLES];
+                const toCandle = candles[candles.length - 1];
+                const padding = (toCandle.t - fromCandle.t) * 0.05;
+                chartRef.current.timeScale().setVisibleRange({
+                  from: fromCandle.t as Time,
+                  to: (toCandle.t + padding) as Time,
+                });
+              } else {
+                chartRef.current.timeScale().fitContent();
+              }
+            });
           }
 
           setDataLoaded(true);
