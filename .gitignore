@@ -34,4 +34,7 @@ Thumbs.db
 *.html
 reports/
 
+# Backup archives
+*_backup_*.zip
+
 .vercel

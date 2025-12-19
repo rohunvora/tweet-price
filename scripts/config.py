@@ -21,10 +21,8 @@ RATE_LIMIT_DELAY = 1.1  # seconds between requests
 
 # Data paths
 DATA_DIR = PROJECT_ROOT / "data"
-TWEETS_FILE = DATA_DIR / "tweets.json"  # Legacy - single asset
-PRICES_DB = DATA_DIR / "prices.db"      # Legacy - single asset
 
-# New unified database
+# Primary database (single source of truth)
 ANALYTICS_DB = DATA_DIR / "analytics.duckdb"
 ASSETS_FILE = PROJECT_ROOT / "scripts" / "assets.json"
 

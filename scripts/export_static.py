@@ -2,17 +2,19 @@
 Export data from DuckDB as static JSON files for the frontend.
 Generates per-asset directories with prices and tweet events.
 
+This is the final step in the data pipeline:
+    fetch_tweets.py / fetch_prices.py  ->  analytics.duckdb  ->  export_static.py  ->  JSON files
+
 Output structure:
-    web/public/data/
+    web/public/static/
         assets.json                 # Copy of asset config for frontend
         {asset_id}/
-            prices_1d.json
-            prices_1h.json
-            prices_15m.json
-            prices_1m_index.json
+            prices_1d.json          # Daily OHLCV candles
+            prices_1h.json          # Hourly OHLCV candles
+            prices_15m.json         # 15-minute OHLCV candles
+            prices_1m_index.json    # Index for chunked 1m data
             prices_1m_2025-07.json  # Monthly chunks for 1m data
-            tweet_events.json
-            stats.json
+            tweet_events.json       # Tweets with aligned price data
 
 Usage:
     python export_static.py                 # Export all enabled assets
