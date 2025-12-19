@@ -1,30 +1,105 @@
 """
-Nitter Scraper - Supplement Twitter API with Nitter for historical data.
+Nitter Scraper - Robust tweet backfill via Nitter instances.
 
-This scraper bypasses API rate limits by using a real browser via Playwright.
-It's designed to work seamlessly with the existing tweet pipeline.
+===============================================================================
+ARCHITECTURE OVERVIEW
+===============================================================================
 
-ARCHITECTURE:
-- Uses date-range URL params for efficient targeted scraping
-- Outputs data in EXACT format expected by db.insert_tweets()
-- Integrates with ingestion_state for resumability
-- Designed as API rate-limit fallback + ad-hoc backfill tool
+This scraper uses Playwright (headless Chrome) to scrape tweets from Nitter,
+a Twitter frontend that doesn't require API access. It's designed as a fallback
+when the official Twitter API is rate-limited or unavailable.
 
-Usage:
-    # Backfill a specific date range
-    python nitter_scraper.py --asset useless --since 2025-05-23 --until 2025-05-30
-    
-    # Auto-detect and fill gaps (uses ingestion_state)
-    python nitter_scraper.py --asset useless --backfill
-    
-    # Full scrape for new asset
-    python nitter_scraper.py --asset pump --full
+WHY NITTER?
+- No API key required
+- No rate limits (with careful scraping)
+- Access to historical tweets
+- Date-range filtering via URL params
+
+KEY FEATURES:
+1. Instance rotation - Falls back between nitter.net and nitter.poast.org
+2. Conservative delays - 30-60s between chunks to avoid rate limiting
+3. Exponential backoff - Retries with increasing delays on failure
+4. Progress tracking - Resumable via JSON file (data/nitter_progress.json)
+5. Username filtering - Only captures tweets from the target founder
+
+===============================================================================
+LESSONS LEARNED FROM V1 (Why this exists)
+===============================================================================
+
+The original scraper (nitter_scraper_v1_deprecated.py) failed because:
+- 5 second delay was too fast → net::ERR_HTTP_RESPONSE_CODE_FAILURE
+- Single instance = single point of failure  
+- No retry logic → lost progress on any error
+- No progress tracking → couldn't resume
+
+V2 IMPROVEMENTS:
+1. Much longer delays (30-60s between chunks vs 5s)
+2. Exponential backoff retry (up to 5 attempts per chunk)
+3. Instance rotation (nitter.net → nitter.poast.org)
+4. Randomized delays (appear human-like)
+5. Browser session reuse (reduces detection fingerprint)
+6. Progress tracking (resume from failures)
+7. Early pagination termination (stops after 3 empty pages)
+
+===============================================================================
+USAGE EXAMPLES
+===============================================================================
+
+# Full backfill from launch date to present (RECOMMENDED for new assets)
+python nitter_scraper.py --asset useless --full --no-headless
+
+# Specific date range
+python nitter_scraper.py --asset useless --since 2025-06-01 --until 2025-07-01
+
+# Resume after interruption (uses progress file)
+python nitter_scraper.py --asset useless --full
+
+# Clear progress and start fresh
+python nitter_scraper.py --asset useless --clear-progress
+python nitter_scraper.py --asset useless --full
+
+# Test with a short chunk (for debugging)
+python nitter_scraper.py --asset useless --since 2025-06-01 --until 2025-06-08
+
+===============================================================================
+PERFORMANCE NOTES
+===============================================================================
+
+Current timing (conservative for reliability):
+- ~1 minute per 7-day chunk (including delays)
+- ~30 minutes for a 7-month backfill
+- Single-threaded to avoid rate limiting
+
+FUTURE OPTIMIZATION IDEAS:
+- Multi-instance parallel scraping (use nitter.net AND nitter.poast.org)
+- Adaptive delays based on response time
+- Cookie/session persistence for faster auth
+- Proxy rotation for IP diversity
+
+===============================================================================
+DATA FORMAT
+===============================================================================
+
+Tweets are saved in the exact format expected by db.insert_tweets():
+{
+    'id': '123456789',           # Tweet ID (string)
+    'text': 'Tweet content...',  # Full text
+    'timestamp': datetime,        # Python datetime (UTC)
+    'created_at': 'ISO8601',     # ISO string for display
+    'likes': 100,                # Like count
+    'retweets': 50,              # Retweet count
+    'replies': 10,               # Reply count
+    'impressions': 1000          # View count (if available)
+}
+
+===============================================================================
 """
 import argparse
 import json
 import re
 import sys
 import time
+import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
@@ -40,23 +115,107 @@ from db import (
 
 # Check for playwright
 try:
-    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout, Browser, BrowserContext, Page
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 
 
 # =============================================================================
-# CONFIGURATION
+# CONFIGURATION - TUNED FOR RELIABILITY
 # =============================================================================
 
-NITTER_INSTANCE = "https://nitter.net"
-DEFAULT_CHUNK_DAYS = 7  # Scrape in 7-day chunks for efficiency
-MAX_TWEETS_PER_CHUNK = 500  # Safety limit per chunk
-PAGE_LOAD_TIMEOUT = 30000  # 30 seconds
-TWEET_WAIT_TIMEOUT = 15000  # 15 seconds
-INTER_PAGE_DELAY = 2.0  # Seconds between pagination
-INTER_CHUNK_DELAY = 5.0  # Seconds between date chunks
+# Instance list - rotate on failure
+NITTER_INSTANCES = [
+    "https://nitter.net",
+    "https://nitter.poast.org",
+]
+
+# Timing - MUCH more conservative than v1
+MIN_CHUNK_DELAY = 30  # Minimum 30 seconds between chunks
+MAX_CHUNK_DELAY = 60  # Maximum 60 seconds between chunks
+MIN_PAGE_DELAY = 3    # Minimum 3 seconds between pagination clicks
+MAX_PAGE_DELAY = 6    # Maximum 6 seconds between pagination clicks
+
+# Retry configuration
+MAX_RETRIES = 5              # Retry each chunk up to 5 times
+INITIAL_RETRY_DELAY = 60     # Start with 60 second delay
+RETRY_BACKOFF_FACTOR = 1.5   # Multiply delay by 1.5 each retry
+
+# Timeouts
+PAGE_LOAD_TIMEOUT = 45000    # 45 seconds for page load
+TWEET_WAIT_TIMEOUT = 20000   # 20 seconds to wait for tweets
+CLOUDFLARE_WAIT = 5          # 5 seconds for Cloudflare challenges
+
+# Chunk settings
+DEFAULT_CHUNK_DAYS = 7       # 7 days per chunk (smaller = safer)
+MAX_TWEETS_PER_CHUNK = 500   # Safety limit
+MAX_PAGES_PER_CHUNK = 20     # Pagination safety limit
+
+# Progress file for resumability
+PROGRESS_FILE = Path(__file__).parent.parent / "data" / "nitter_progress.json"
+
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+def log(msg: str, level: str = "INFO"):
+    """Log with timestamp and level."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    prefix = {
+        "INFO": "ℹ️ ",
+        "OK": "✅ ",
+        "WARN": "⚠️ ",
+        "ERROR": "❌ ",
+        "DEBUG": "🔍 ",
+        "WAIT": "⏳ ",
+    }.get(level, "")
+    print(f"[{timestamp}] {prefix}{msg}", flush=True)
+
+
+# =============================================================================
+# PROGRESS TRACKING
+# =============================================================================
+
+def load_progress() -> Dict:
+    """Load progress from file."""
+    if PROGRESS_FILE.exists():
+        try:
+            return json.loads(PROGRESS_FILE.read_text())
+        except:
+            pass
+    return {}
+
+
+def save_progress(progress: Dict):
+    """Save progress to file."""
+    PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PROGRESS_FILE.write_text(json.dumps(progress, indent=2, default=str))
+
+
+def get_completed_chunks(asset_id: str) -> set:
+    """Get set of completed chunk date ranges."""
+    progress = load_progress()
+    return set(progress.get(asset_id, {}).get("completed_chunks", []))
+
+
+def mark_chunk_complete(asset_id: str, chunk_key: str):
+    """Mark a chunk as completed."""
+    progress = load_progress()
+    if asset_id not in progress:
+        progress[asset_id] = {"completed_chunks": []}
+    if chunk_key not in progress[asset_id]["completed_chunks"]:
+        progress[asset_id]["completed_chunks"].append(chunk_key)
+    save_progress(progress)
+
+
+def clear_progress(asset_id: str):
+    """Clear progress for an asset."""
+    progress = load_progress()
+    if asset_id in progress:
+        del progress[asset_id]
+        save_progress(progress)
 
 
 # =============================================================================
@@ -108,7 +267,6 @@ def parse_stat_number(text: str) -> int:
     
     text = text.strip().replace(',', '')
     
-    # Handle K/M suffixes
     multiplier = 1
     if text.endswith('K'):
         multiplier = 1000
@@ -127,322 +285,346 @@ def parse_stat_number(text: str) -> int:
 # SCRAPER CORE
 # =============================================================================
 
-def scrape_date_range(
+def wait_random(min_sec: float, max_sec: float, reason: str = ""):
+    """Wait a random amount of time."""
+    delay = random.uniform(min_sec, max_sec)
+    if reason:
+        log(f"Waiting {delay:.1f}s - {reason}", "WAIT")
+    time.sleep(delay)
+
+
+def handle_cloudflare(page: Page) -> bool:
+    """
+    Handle Cloudflare challenge if present.
+    Returns True if challenge was resolved or not present.
+    """
+    try:
+        # Check for Cloudflare challenge indicators
+        content = page.content().lower()
+        if 'verifying' in content or 'cloudflare' in content or 'checking your browser' in content:
+            log("Cloudflare challenge detected, waiting...", "WAIT")
+            time.sleep(CLOUDFLARE_WAIT)
+            
+            # Wait for challenge to resolve
+            for _ in range(10):  # Max 10 attempts
+                content = page.content().lower()
+                if 'verifying' not in content and 'cloudflare' not in content:
+                    log("Cloudflare challenge passed", "OK")
+                    return True
+                time.sleep(2)
+            
+            log("Cloudflare challenge did not resolve", "WARN")
+            return False
+        
+        return True
+    except Exception as e:
+        log(f"Error checking Cloudflare: {e}", "WARN")
+        return True  # Continue anyway
+
+
+def extract_tweets_from_page(page: Page, target_username: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Extract all tweets from the current page state.
+    Returns list of tweet dicts in db.insert_tweets() format.
+    
+    Args:
+        page: Playwright page object
+        target_username: If provided, only include tweets from this user (without @)
+    """
+    tweets = []
+    seen_ids = set()
+    
+    try:
+        tweet_elements = page.query_selector_all('.timeline-item')
+        
+        for el in tweet_elements:
+            try:
+                # Skip non-tweet items
+                classes = el.get_attribute('class') or ''
+                if 'show-more' in classes:
+                    continue
+                
+                # Get tweet link and extract ID
+                date_link = el.query_selector('.tweet-date a')
+                if not date_link:
+                    continue
+                
+                href = date_link.get_attribute('href') or ''
+                tweet_id = extract_tweet_id(href)
+                
+                if not tweet_id or tweet_id in seen_ids:
+                    continue
+                
+                # Skip retweets
+                if el.query_selector('.retweet-header'):
+                    continue
+                
+                # Skip replies
+                if el.query_selector('.replying-to'):
+                    continue
+                
+                # IMPORTANT: Filter by author username
+                if target_username:
+                    # Get the username from the tweet header
+                    # Try multiple selectors as Nitter HTML can vary
+                    username_el = el.query_selector('.tweet-header .username')
+                    if not username_el:
+                        username_el = el.query_selector('.username')
+                    
+                    if username_el:
+                        tweet_username = username_el.inner_text().strip().lstrip('@').lower()
+                        if tweet_username != target_username.lower():
+                            # This tweet is from a different user (e.g., a quote tweet)
+                            continue
+                    else:
+                        # Can't determine username from selector - check URL as fallback
+                        if f"/{target_username.lower()}/status/" not in href.lower():
+                            continue
+                
+                seen_ids.add(tweet_id)
+                
+                # Get date
+                date_title = date_link.get_attribute('title') or ''
+                tweet_dt = parse_nitter_date(date_title)
+                
+                if not tweet_dt:
+                    continue
+                
+                # Get text
+                text_el = el.query_selector('.tweet-content')
+                text = text_el.inner_text().strip() if text_el else ""
+                
+                # Get stats
+                stats = {'replies': 0, 'retweets': 0, 'likes': 0, 'impressions': 0}
+                
+                stat_elements = el.query_selector_all('.tweet-stat')
+                for stat_el in stat_elements:
+                    stat_text = stat_el.inner_text().strip()
+                    stat_val = parse_stat_number(stat_text)
+                    
+                    icon = stat_el.query_selector('.icon-comment, .icon-retweet, .icon-heart, .icon-chart')
+                    if icon:
+                        icon_class = icon.get_attribute('class') or ''
+                        if 'comment' in icon_class:
+                            stats['replies'] = stat_val
+                        elif 'retweet' in icon_class:
+                            stats['retweets'] = stat_val
+                        elif 'heart' in icon_class:
+                            stats['likes'] = stat_val
+                        elif 'chart' in icon_class:
+                            stats['impressions'] = stat_val
+                
+                # Build tweet in db format
+                tweet = {
+                    'id': tweet_id,
+                    'text': text,
+                    'timestamp': tweet_dt,
+                    'created_at': tweet_dt.isoformat().replace('+00:00', 'Z'),
+                    'likes': stats['likes'],
+                    'retweets': stats['retweets'],
+                    'replies': stats['replies'],
+                    'impressions': stats['impressions'],
+                }
+                
+                tweets.append(tweet)
+                
+            except Exception as e:
+                log(f"Error parsing tweet: {e}", "DEBUG")
+                continue
+    
+    except Exception as e:
+        log(f"Error extracting tweets: {e}", "ERROR")
+    
+    return tweets
+
+
+def scrape_chunk_with_context(
+    context: BrowserContext,
+    instance: str,
     username: str,
     since: str,
     until: str,
     keyword: Optional[str] = None,
     max_tweets: int = MAX_TWEETS_PER_CHUNK,
-    headless: bool = False,
-    verbose: bool = True
 ) -> Tuple[List[Dict[str, Any]], bool]:
     """
-    Scrape tweets for a specific date range.
-    
-    Args:
-        username: Twitter username (without @)
-        since: Start date YYYY-MM-DD
-        until: End date YYYY-MM-DD (exclusive)
-        keyword: Optional keyword to filter tweets (e.g., "useless" for coin mentions)
-        max_tweets: Safety limit
-        headless: Run headless (may trigger bot detection)
-        verbose: Print progress
+    Scrape a single date chunk using existing browser context.
     
     Returns:
         (list of tweets, success boolean)
     """
-    if not PLAYWRIGHT_AVAILABLE:
-        print("[NITTER] ERROR: Playwright not installed. Run:")
-        print("  pip install playwright && playwright install chromium")
-        return [], False
-    
-    tweets = []
-    seen_ids = set()
-    
-    # Build URL with date params and optional keyword filter
-    # URL encode the keyword for the search query
     from urllib.parse import quote_plus
+    
     query = quote_plus(keyword) if keyword else ""
-    url = f"{NITTER_INSTANCE}/{username}/search?f=tweets&q={query}&since={since}&until={until}"
+    url = f"{instance}/{username}/search?f=tweets&q={query}&since={since}&until={until}"
     
-    if verbose:
-        print(f"[NITTER] Scraping {username}: {since} to {until}")
-        print(f"[NITTER] URL: {url}")
+    log(f"Scraping: {since} to {until} via {instance.split('//')[1]}", "INFO")
     
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=headless,
-            args=['--disable-blink-features=AutomationControlled', '--no-sandbox']
-        )
-        
-        context = browser.new_context(
-            viewport={'width': 1280, 'height': 900},
-            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        )
-        
-        page = context.new_page()
-        success = False
-        
-        try:
-            page.goto(url, timeout=PAGE_LOAD_TIMEOUT)
-            
-            # Wait for timeline or error
-            try:
-                page.wait_for_selector('.timeline-item, .error-panel', timeout=TWEET_WAIT_TIMEOUT)
-            except PlaywrightTimeout:
-                if verbose:
-                    print(f"[NITTER] No tweets found for date range")
-                browser.close()
-                return [], True  # Empty is still success
-            
-            # Check for error
-            error = page.query_selector('.error-panel')
-            if error:
-                error_text = error.inner_text()
-                if verbose:
-                    print(f"[NITTER] Error: {error_text}")
-                browser.close()
-                return [], "No items found" in error_text  # Empty search is OK
-            
-            pages_scraped = 0
-            max_pages = 20  # Safety limit
-            
-            while len(tweets) < max_tweets and pages_scraped < max_pages:
-                pages_scraped += 1
-                
-                tweet_elements = page.query_selector_all('.timeline-item')
-                new_count = 0
-                
-                for el in tweet_elements:
-                    try:
-                        # Skip non-tweet items
-                        classes = el.get_attribute('class') or ''
-                        if 'show-more' in classes:
-                            continue
-                        
-                        # Get tweet link and extract ID
-                        date_link = el.query_selector('.tweet-date a')
-                        if not date_link:
-                            continue
-                        
-                        href = date_link.get_attribute('href') or ''
-                        tweet_id = extract_tweet_id(href)
-                        
-                        if not tweet_id or tweet_id in seen_ids:
-                            continue
-                        
-                        # Skip retweets (to match X API behavior)
-                        if el.query_selector('.retweet-header'):
-                            continue
-                        
-                        # Skip replies (to match X API behavior with exclude=replies)
-                        # Nitter shows "Replying to @user" with class "replying-to"
-                        if el.query_selector('.replying-to'):
-                            continue
-                        
-                        seen_ids.add(tweet_id)
-                        
-                        # Get date
-                        date_title = date_link.get_attribute('title') or ''
-                        tweet_dt = parse_nitter_date(date_title)
-                        
-                        if not tweet_dt:
-                            # Try to parse from relative date (skip these)
-                            continue
-                        
-                        # Get text
-                        text_el = el.query_selector('.tweet-content')
-                        text = text_el.inner_text().strip() if text_el else ""
-                        
-                        # Get stats: comments, retweets, quotes, likes
-                        # Nitter shows: 💬 replies, 🔁 retweets, ❤️ likes, 📊 impressions
-                        stats = {'replies': 0, 'retweets': 0, 'likes': 0, 'impressions': 0}
-                        
-                        stat_elements = el.query_selector_all('.tweet-stat')
-                        for stat_el in stat_elements:
-                            stat_text = stat_el.inner_text().strip()
-                            stat_val = parse_stat_number(stat_text)
-                            
-                            # Determine stat type by icon/class
-                            icon = stat_el.query_selector('.icon-comment, .icon-retweet, .icon-heart, .icon-chart')
-                            if icon:
-                                icon_class = icon.get_attribute('class') or ''
-                                if 'comment' in icon_class:
-                                    stats['replies'] = stat_val
-                                elif 'retweet' in icon_class:
-                                    stats['retweets'] = stat_val
-                                elif 'heart' in icon_class:
-                                    stats['likes'] = stat_val
-                                elif 'chart' in icon_class:
-                                    stats['impressions'] = stat_val
-                        
-                        # Build tweet in EXACT format for db.insert_tweets()
-                        tweet = {
-                            'id': tweet_id,
-                            'text': text,
-                            'timestamp': tweet_dt,  # datetime object
-                            'created_at': tweet_dt.isoformat().replace('+00:00', 'Z'),  # ISO string
-                            'likes': stats['likes'],
-                            'retweets': stats['retweets'],
-                            'replies': stats['replies'],
-                            'impressions': stats['impressions'],
-                        }
-                        
-                        tweets.append(tweet)
-                        new_count += 1
-                        
-                        if len(tweets) >= max_tweets:
-                            break
-                            
-                    except Exception as e:
-                        if verbose:
-                            print(f"[NITTER] Error parsing tweet: {e}")
-                        continue
-                
-                if verbose:
-                    print(f"[NITTER]   Page {pages_scraped}: +{new_count} tweets (total: {len(tweets)})")
-                
-                # Check for pagination
-                if len(tweets) >= max_tweets:
-                    break
-                
-                show_more = page.query_selector_all('.show-more a')
-                if show_more:
-                    try:
-                        show_more[-1].click()
-                        time.sleep(INTER_PAGE_DELAY)
-                        page.wait_for_selector('.timeline-item', timeout=10000)
-                    except PlaywrightTimeout:
-                        break
-                    except Exception as e:
-                        if verbose:
-                            print(f"[NITTER]   Pagination error: {e}")
-                        break
-                else:
-                    break
-            
-            success = True
-            
-        except PlaywrightTimeout:
-            if verbose:
-                print(f"[NITTER] Page load timeout - bot detection may have triggered")
-        except Exception as e:
-            if verbose:
-                print(f"[NITTER] Error: {e}")
-        finally:
-            browser.close()
-    
-    return tweets, success
-
-
-def scrape_tweets_chunked(
-    username: str,
-    since: datetime,
-    until: datetime,
-    keyword: Optional[str] = None,
-    chunk_days: int = DEFAULT_CHUNK_DAYS,
-    headless: bool = False,
-    verbose: bool = True
-) -> List[Dict[str, Any]]:
-    """
-    Scrape tweets in date chunks for efficiency and reliability.
-    
-    Args:
-        username: Twitter username
-        since: Start datetime
-        until: End datetime
-        keyword: Optional keyword to filter tweets (e.g., "useless" for coin mentions)
-        chunk_days: Days per chunk
-        headless: Run headless
-        verbose: Print progress
-    
-    Returns:
-        List of all tweets found
-    """
     all_tweets = []
-    current = since
-    chunk_num = 0
-    total_chunks = ((until - since).days // chunk_days) + 1
+    seen_ids = set()
+    page = None
     
-    if verbose:
-        print(f"[NITTER] Scraping @{username} from {since.date()} to {until.date()}")
-        if keyword:
-            print(f"[NITTER] Keyword filter: \"{keyword}\"")
-        print(f"[NITTER] Splitting into ~{total_chunks} chunks of {chunk_days} days")
-        print("=" * 60)
+    try:
+        page = context.new_page()
+        page.goto(url, timeout=PAGE_LOAD_TIMEOUT)
+        
+        # Handle Cloudflare
+        if not handle_cloudflare(page):
+            page.close()
+            return [], False
+        
+        # Wait for content
+        try:
+            page.wait_for_selector('.timeline-item, .error-panel', timeout=TWEET_WAIT_TIMEOUT)
+        except PlaywrightTimeout:
+            log("No tweets found for date range (timeout)", "INFO")
+            page.close()
+            return [], True  # Empty but successful
+        
+        # Check for error panel
+        error = page.query_selector('.error-panel')
+        if error:
+            error_text = error.inner_text()
+            if "No items found" in error_text:
+                log("No tweets in this range", "INFO")
+                page.close()
+                return [], True
+            else:
+                log(f"Error panel: {error_text}", "WARN")
+                page.close()
+                return [], False
+        
+        # Paginate and collect tweets
+        pages_scraped = 0
+        empty_pages = 0  # Track consecutive pages with no new tweets
+        MAX_EMPTY_PAGES = 3  # Stop after 3 consecutive empty pages
+        
+        while len(all_tweets) < max_tweets and pages_scraped < MAX_PAGES_PER_CHUNK:
+            pages_scraped += 1
+            
+            # Extract tweets from current page (filtered by username)
+            new_tweets = extract_tweets_from_page(page, target_username=username)
+            added = 0
+            
+            for t in new_tweets:
+                if t['id'] not in seen_ids:
+                    seen_ids.add(t['id'])
+                    all_tweets.append(t)
+                    added += 1
+            
+            log(f"  Page {pages_scraped}: +{added} tweets (total: {len(all_tweets)})", "DEBUG")
+            
+            # Track empty pages
+            if added == 0:
+                empty_pages += 1
+                if empty_pages >= MAX_EMPTY_PAGES:
+                    log(f"  Stopping after {MAX_EMPTY_PAGES} empty pages", "DEBUG")
+                    break
+            else:
+                empty_pages = 0  # Reset on successful page
+            
+            if len(all_tweets) >= max_tweets:
+                break
+            
+            # Check for "Load more" button
+            load_more = page.query_selector('.show-more a')
+            if not load_more:
+                break
+            
+            try:
+                load_more.click()
+                wait_random(MIN_PAGE_DELAY, MAX_PAGE_DELAY, "pagination")
+                page.wait_for_selector('.timeline-item', timeout=10000)
+            except Exception as e:
+                log(f"Pagination ended: {e}", "DEBUG")
+                break
+        
+        page.close()
+        return all_tweets, True
+        
+    except PlaywrightTimeout:
+        log("Page load timeout", "WARN")
+        if page:
+            page.close()
+        return [], False
+    except Exception as e:
+        log(f"Scrape error: {e}", "ERROR")
+        if page:
+            page.close()
+        return [], False
+
+
+def scrape_chunk_with_retry(
+    context: BrowserContext,
+    username: str,
+    since: str,
+    until: str,
+    keyword: Optional[str] = None,
+) -> Tuple[List[Dict[str, Any]], bool]:
+    """
+    Scrape a chunk with retry logic and instance rotation.
+    """
+    retry_delay = INITIAL_RETRY_DELAY
     
-    while current < until:
-        chunk_num += 1
-        chunk_end = min(current + timedelta(days=chunk_days), until)
+    for attempt in range(MAX_RETRIES):
+        # Rotate instances
+        instance = NITTER_INSTANCES[attempt % len(NITTER_INSTANCES)]
         
-        since_str = current.strftime('%Y-%m-%d')
-        until_str = chunk_end.strftime('%Y-%m-%d')
+        if attempt > 0:
+            log(f"Retry {attempt}/{MAX_RETRIES} after {retry_delay:.0f}s delay", "WAIT")
+            time.sleep(retry_delay)
+            retry_delay *= RETRY_BACKOFF_FACTOR
         
-        if verbose:
-            print(f"\n[NITTER] Chunk {chunk_num}/{total_chunks}: {since_str} to {until_str}")
-        
-        tweets, success = scrape_date_range(
+        tweets, success = scrape_chunk_with_context(
+            context=context,
+            instance=instance,
             username=username,
-            since=since_str,
-            until=until_str,
+            since=since,
+            until=until,
             keyword=keyword,
-            headless=headless,
-            verbose=verbose
         )
         
-        if tweets:
-            all_tweets.extend(tweets)
-            if verbose:
-                print(f"[NITTER]   ✓ Found {len(tweets)} tweets")
-        elif success:
-            if verbose:
-                print(f"[NITTER]   ○ No tweets in this range")
-        else:
-            if verbose:
-                print(f"[NITTER]   ✗ Failed to scrape this chunk")
-        
-        current = chunk_end
-        
-        # Delay between chunks to avoid detection
-        if current < until:
-            time.sleep(INTER_CHUNK_DELAY)
+        if success:
+            return tweets, True
     
-    if verbose:
-        print("\n" + "=" * 60)
-        print(f"[NITTER] Complete: {len(all_tweets)} total tweets scraped")
-    
-    return all_tweets
+    log(f"Chunk failed after {MAX_RETRIES} retries", "ERROR")
+    return [], False
 
 
 # =============================================================================
-# DATABASE INTEGRATION
+# MAIN ORCHESTRATION
 # =============================================================================
 
-def scrape_and_save(
+def scrape_asset(
     asset_id: str,
     since: Optional[str] = None,
     until: Optional[str] = None,
     keyword: Optional[str] = None,
-    backfill: bool = False,
     full: bool = False,
+    resume: bool = True,
     chunk_days: int = DEFAULT_CHUNK_DAYS,
     headless: bool = False,
-    verbose: bool = True
 ) -> Dict[str, Any]:
     """
-    Scrape tweets and save directly to database.
-    
-    Modes:
-    - Specific range: --since and --until provided
-    - Backfill: Auto-detect gaps and fill from launch to oldest tweet
-    - Full: Scrape from launch to now
+    Main entry point for scraping an asset's tweets.
     
     Args:
-        keyword: Optional keyword filter (e.g., "useless"). 
-                 If None, uses asset's keyword_filter from config if set.
+        asset_id: Asset ID from assets.json
+        since: Start date YYYY-MM-DD (optional)
+        until: End date YYYY-MM-DD (optional)
+        keyword: Keyword filter (uses asset config if None)
+        full: Scrape from launch to now
+        resume: Skip already-completed chunks
+        chunk_days: Days per chunk
+        headless: Run browser headless
     
-    Returns summary dict.
+    Returns:
+        Summary dict with status and stats
     """
+    if not PLAYWRIGHT_AVAILABLE:
+        return {'status': 'error', 'reason': 'Playwright not installed'}
+    
+    # Load asset config
     conn = get_connection()
     init_schema(conn)
     load_assets_from_json(conn)
@@ -455,28 +637,28 @@ def scrape_and_save(
     username = asset['founder']
     launch_date = asset['launch_date']
     
-    # Use keyword from args, or fall back to asset's configured keyword_filter
-    effective_keyword = keyword
-    if effective_keyword is None:
-        effective_keyword = asset.get('keyword_filter')
+    # Use keyword from args, or fall back to asset config
+    effective_keyword = keyword if keyword is not None else asset.get('keyword_filter')
+    
     if isinstance(launch_date, str):
         launch_date = datetime.fromisoformat(launch_date.replace('Z', '+00:00'))
     if launch_date.tzinfo is None:
         launch_date = launch_date.replace(tzinfo=timezone.utc)
     
-    if verbose:
-        print(f"\n[NITTER] Asset: {asset['name']} (@{username})")
-        print(f"[NITTER] Launch date: {launch_date.date()}")
-        if effective_keyword:
-            print(f"[NITTER] Keyword filter: \"{effective_keyword}\"")
+    log(f"Asset: {asset['name']} (@{username})", "INFO")
+    log(f"Launch: {launch_date.date()}", "INFO")
+    if effective_keyword:
+        log(f"Keyword filter: \"{effective_keyword}\"", "INFO")
     
     # Determine date range
     if since and until:
-        # Explicit range
         since_dt = datetime.strptime(since, '%Y-%m-%d').replace(tzinfo=timezone.utc)
         until_dt = datetime.strptime(until, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-    elif backfill:
-        # Auto-detect: from launch to oldest tweet we have
+    elif full:
+        since_dt = launch_date
+        until_dt = datetime.now(timezone.utc)
+    else:
+        # Backfill mode: from launch to oldest tweet
         oldest = conn.execute("""
             SELECT MIN(timestamp) FROM tweets WHERE asset_id = ?
         """, [asset_id]).fetchone()[0]
@@ -486,77 +668,116 @@ def scrape_and_save(
             until_dt = oldest if isinstance(oldest, datetime) else datetime.fromisoformat(str(oldest))
             if until_dt.tzinfo is None:
                 until_dt = until_dt.replace(tzinfo=timezone.utc)
-            if verbose:
-                print(f"[NITTER] Backfill mode: {since_dt.date()} to {until_dt.date()}")
         else:
-            # No tweets yet, do full scrape from launch
             since_dt = launch_date
             until_dt = datetime.now(timezone.utc)
-            if verbose:
-                print(f"[NITTER] No existing tweets, doing full scrape")
-    elif full:
-        # Full: launch to now
-        since_dt = launch_date
-        until_dt = datetime.now(timezone.utc)
-    else:
-        conn.close()
-        return {'status': 'error', 'reason': 'Must specify --since/--until, --backfill, or --full'}
     
-    # Don't scrape before launch
+    # Clamp dates
     if since_dt < launch_date:
         since_dt = launch_date
-    
-    # Don't scrape into the future
     now = datetime.now(timezone.utc)
     if until_dt > now:
         until_dt = now
     
     if since_dt >= until_dt:
-        if verbose:
-            print(f"[NITTER] No date range to scrape (since >= until)")
+        log("No date range to scrape", "INFO")
         conn.close()
-        return {'status': 'skipped', 'reason': 'No date range to scrape'}
+        return {'status': 'skipped', 'reason': 'No date range'}
     
-    # Scrape
-    tweets = scrape_tweets_chunked(
-        username=username,
-        since=since_dt,
-        until=until_dt,
-        keyword=effective_keyword,
-        chunk_days=chunk_days,
-        headless=headless,
-        verbose=verbose
-    )
+    # Generate chunks
+    chunks = []
+    current = since_dt
+    while current < until_dt:
+        chunk_end = min(current + timedelta(days=chunk_days), until_dt)
+        chunk_key = f"{current.strftime('%Y-%m-%d')}_{chunk_end.strftime('%Y-%m-%d')}"
+        chunks.append({
+            'since': current.strftime('%Y-%m-%d'),
+            'until': chunk_end.strftime('%Y-%m-%d'),
+            'key': chunk_key,
+        })
+        current = chunk_end
     
-    # Filter out any tweets before launch (safety check)
-    tweets = [t for t in tweets if t['timestamp'] >= launch_date]
+    # Filter completed chunks if resuming
+    completed = get_completed_chunks(asset_id) if resume else set()
+    pending_chunks = [c for c in chunks if c['key'] not in completed]
     
-    # Insert into database
-    if tweets:
-        inserted = insert_tweets(conn, asset_id, tweets)
-        if verbose:
-            print(f"\n[NITTER] Inserted {inserted} tweets into database")
+    log(f"Total chunks: {len(chunks)}, Pending: {len(pending_chunks)}", "INFO")
+    log("=" * 60)
+    
+    # Scrape with persistent browser
+    total_tweets = 0
+    total_inserted = 0
+    failed_chunks = []
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=headless,
+            args=['--disable-blink-features=AutomationControlled', '--no-sandbox']
+        )
         
-        # Update ingestion state
-        sorted_tweets = sorted(tweets, key=lambda t: t['id'])
-        newest_id = sorted_tweets[-1]['id']
-        oldest_id = sorted_tweets[0]['id']
+        context = browser.new_context(
+            viewport={'width': 1280, 'height': 900},
+            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        )
         
-        # Track nitter-specific state
-        update_ingestion_state(conn, asset_id, 'nitter_newest', last_id=newest_id)
-        update_ingestion_state(conn, asset_id, 'nitter_oldest', last_id=oldest_id)
-    else:
-        inserted = 0
+        for i, chunk in enumerate(pending_chunks, 1):
+            log(f"\nChunk {i}/{len(pending_chunks)}: {chunk['since']} to {chunk['until']}", "INFO")
+            
+            tweets, success = scrape_chunk_with_retry(
+                context=context,
+                username=username,
+                since=chunk['since'],
+                until=chunk['until'],
+                keyword=effective_keyword,
+            )
+            
+            if success:
+                # Filter pre-launch tweets
+                tweets = [t for t in tweets if t['timestamp'] >= launch_date]
+                
+                if tweets:
+                    inserted = insert_tweets(conn, asset_id, tweets)
+                    total_tweets += len(tweets)
+                    total_inserted += inserted
+                    log(f"Found {len(tweets)} tweets, inserted {inserted} new", "OK")
+                else:
+                    log("No tweets in this chunk", "INFO")
+                
+                mark_chunk_complete(asset_id, chunk['key'])
+            else:
+                failed_chunks.append(chunk['key'])
+                log(f"Chunk failed: {chunk['key']}", "ERROR")
+            
+            # Delay before next chunk
+            if i < len(pending_chunks):
+                wait_random(MIN_CHUNK_DELAY, MAX_CHUNK_DELAY, "before next chunk")
+        
+        browser.close()
+    
+    # Summary
+    log("\n" + "=" * 60)
+    log("SUMMARY", "INFO")
+    log(f"  Chunks processed: {len(pending_chunks)}", "INFO")
+    log(f"  Chunks failed: {len(failed_chunks)}", "INFO")
+    log(f"  Tweets found: {total_tweets}", "INFO")
+    log(f"  Tweets inserted: {total_inserted}", "INFO")
+    
+    if failed_chunks:
+        log(f"  Failed chunks: {failed_chunks}", "WARN")
     
     conn.close()
     
     return {
-        'status': 'success',
+        'status': 'success' if not failed_chunks else 'partial',
         'asset': asset_id,
         'username': username,
         'date_range': f"{since_dt.date()} to {until_dt.date()}",
-        'tweets_found': len(tweets),
-        'tweets_inserted': inserted,
+        'chunks_total': len(chunks),
+        'chunks_pending': len(pending_chunks),
+        'chunks_failed': len(failed_chunks),
+        'tweets_found': total_tweets,
+        'tweets_inserted': total_inserted,
+        'failed_chunks': failed_chunks,
     }
 
 
@@ -566,43 +787,47 @@ def scrape_and_save(
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Scrape tweets via Nitter (rate-limit fallback)',
+        description='Nitter Scraper v2 - Robust tweet backfill',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Backfill missing tweets for an asset (launch to oldest tweet)
-  python nitter_scraper.py --asset useless --backfill
+  # Full backfill from launch to now
+  python nitter_scraper_v2.py --asset useless --full
   
-  # Scrape specific date range
-  python nitter_scraper.py --asset useless --since 2025-05-23 --until 2025-05-30
+  # Specific date range
+  python nitter_scraper_v2.py --asset useless --since 2025-06-01 --until 2025-07-01
   
-  # Full scrape for new asset
-  python nitter_scraper.py --asset pump --full
+  # Resume after interruption (skips completed chunks)
+  python nitter_scraper_v2.py --asset useless --full
   
-  # Keyword filter for non-founders (only tweets mentioning the coin)
-  python nitter_scraper.py --asset useless --keyword useless --full
+  # Start fresh (clear progress)
+  python nitter_scraper_v2.py --asset useless --full --no-resume
   
-  # Non-headless mode (more reliable but shows browser)
-  python nitter_scraper.py --asset useless --backfill --no-headless
+  # Non-headless mode (shows browser)
+  python nitter_scraper_v2.py --asset useless --full --no-headless
 """
     )
     
     parser.add_argument('--asset', '-a', required=True, help='Asset ID from assets.json')
     parser.add_argument('--since', '-s', help='Start date YYYY-MM-DD')
     parser.add_argument('--until', '-u', help='End date YYYY-MM-DD')
-    parser.add_argument('--keyword', '-k', help='Keyword filter (e.g., "useless" for coin mentions)')
-    parser.add_argument('--backfill', '-b', action='store_true', help='Auto-fill gap from launch to oldest tweet')
+    parser.add_argument('--keyword', '-k', help='Keyword filter')
     parser.add_argument('--full', '-f', action='store_true', help='Full scrape from launch to now')
-    parser.add_argument('--chunk-days', type=int, default=DEFAULT_CHUNK_DAYS, help=f'Days per scraping chunk (default: {DEFAULT_CHUNK_DAYS})')
-    parser.add_argument('--headless', action='store_true', help='Run browser in headless mode (may fail)')
-    parser.add_argument('--no-headless', action='store_true', help='Show browser window (more reliable)')
-    parser.add_argument('--quiet', '-q', action='store_true', help='Suppress output')
+    parser.add_argument('--no-resume', action='store_true', help='Start fresh, ignore progress')
+    parser.add_argument('--chunk-days', type=int, default=DEFAULT_CHUNK_DAYS, help=f'Days per chunk (default: {DEFAULT_CHUNK_DAYS})')
+    parser.add_argument('--headless', action='store_true', help='Run headless (more likely to fail)')
+    parser.add_argument('--no-headless', action='store_true', help='Show browser (recommended)')
+    parser.add_argument('--clear-progress', action='store_true', help='Clear progress for asset and exit')
     
     args = parser.parse_args()
     
-    # Validate args
-    if not (args.since and args.until) and not args.backfill and not args.full:
-        print("ERROR: Must specify --since/--until, --backfill, or --full")
+    if args.clear_progress:
+        clear_progress(args.asset)
+        print(f"Cleared progress for {args.asset}")
+        return
+    
+    if not (args.since and args.until) and not args.full:
+        print("ERROR: Must specify --since/--until or --full")
         parser.print_help()
         sys.exit(1)
     
@@ -612,27 +837,26 @@ Examples:
         print("  playwright install chromium")
         sys.exit(1)
     
-    # Determine headless mode (default: headless, unless --no-headless)
-    headless = not args.no_headless if args.no_headless else args.headless
+    # Determine headless mode
+    headless = args.headless and not args.no_headless
     
-    result = scrape_and_save(
+    result = scrape_asset(
         asset_id=args.asset,
         since=args.since,
         until=args.until,
         keyword=args.keyword,
-        backfill=args.backfill,
         full=args.full,
+        resume=not args.no_resume,
         chunk_days=args.chunk_days,
         headless=headless,
-        verbose=not args.quiet
     )
     
-    if not args.quiet:
-        print(f"\n[NITTER] Result: {json.dumps(result, indent=2)}")
+    print(f"\n[RESULT] {json.dumps(result, indent=2)}")
     
-    if result['status'] != 'success':
+    if result['status'] == 'error':
         sys.exit(1)
 
 
 if __name__ == '__main__':
     main()
+
