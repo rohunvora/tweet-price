@@ -117,6 +117,7 @@ export interface Asset {
   founder: string;
   network: string | null;
   color: string;
+  logo?: string;  // Token logo path (e.g., "/logos/pump.png")
   launch_date: string;
   enabled: boolean;
 }

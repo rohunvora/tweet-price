@@ -399,6 +399,7 @@ def export_assets_json():
                 "network": asset.get("network"),
                 "launch_date": asset["launch_date"],
                 "color": asset.get("color"),
+                "logo": asset.get("logo"),  # Token logo path
                 "enabled": True,  # All exported assets are enabled
             })
     

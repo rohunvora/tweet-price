@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "generated_at": "2025-12-19T00:55:42.486338Z",
+  "generated_at": "2025-12-19T01:20:23.654260Z",
   "assets": [
     {
       "id": "pump",
@@ -9,6 +9,7 @@
       "network": "solana",
       "launch_date": "2025-07-14T00:00:00Z",
       "color": "#9945FF",
+      "logo": "/logos/pump.png",
       "enabled": true
     },
     {
@@ -18,6 +19,7 @@
       "network": "hyperliquid",
       "launch_date": "2024-11-29T00:00:00Z",
       "color": "#00D1FF",
+      "logo": "/logos/hype.png",
       "enabled": true
     },
     {
@@ -27,6 +29,7 @@
       "network": "bsc",
       "launch_date": "2025-09-17T00:00:00Z",
       "color": "#F0B90B",
+      "logo": "/logos/aster.png",
       "enabled": true
     },
     {
@@ -36,6 +39,7 @@
       "network": "solana",
       "launch_date": "2025-01-28T00:00:00Z",
       "color": "#FF6B6B",
+      "logo": "/logos/believe.png",
       "enabled": true
     },
     {
@@ -45,15 +49,17 @@
       "network": "solana",
       "launch_date": "2024-01-31T00:00:00Z",
       "color": "#19FB9B",
+      "logo": "/logos/jup.png",
       "enabled": true
     },
     {
       "id": "monad",
-      "name": "MONAD",
+      "name": "MON",
       "founder": "keoneHD",
       "network": "monad",
       "launch_date": "2025-11-24T00:00:00Z",
       "color": "#836EF9",
+      "logo": "/logos/monad.png",
       "enabled": true
     },
     {
@@ -63,6 +69,7 @@
       "network": "solana",
       "launch_date": "2025-05-23T00:00:00Z",
       "color": "#FF4081",
+      "logo": "/logos/useless.png",
       "enabled": true
     }
   ]

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Image from 'next/image';
 import { Asset } from '@/lib/types';
 
 interface AssetSelectorProps {
@@ -10,8 +11,36 @@ interface AssetSelectorProps {
 }
 
 /**
+ * Token logo component with fallback to color dot.
+ */
+function TokenLogo({ asset, size = 20 }: { asset: Asset; size?: number }) {
+  if (asset.logo) {
+    return (
+      <Image
+        src={asset.logo}
+        alt={`${asset.name} logo`}
+        width={size}
+        height={size}
+        className="rounded-full flex-shrink-0"
+      />
+    );
+  }
+  // Fallback: color dot
+  return (
+    <span
+      className="rounded-full flex-shrink-0"
+      style={{ 
+        backgroundColor: asset.color,
+        width: size,
+        height: size,
+      }}
+    />
+  );
+}
+
+/**
  * Dropdown selector for switching between assets.
- * Shows asset color, ticker, and network badge.
+ * Shows token logo, ticker, and network badge.
  */
 export default function AssetSelector({ assets, selectedAsset, onSelect }: AssetSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -63,11 +92,8 @@ export default function AssetSelector({ assets, selectedAsset, onSelect }: Asset
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
-        {/* Color dot */}
-        <span
-          className="w-3 h-3 rounded-full"
-          style={{ backgroundColor: selectedAsset.color }}
-        />
+        {/* Token logo */}
+        <TokenLogo asset={selectedAsset} size={20} />
         
         {/* Asset name */}
         <span className="text-[#D1D4DC] font-medium">${selectedAsset.name}</span>
@@ -108,11 +134,8 @@ export default function AssetSelector({ assets, selectedAsset, onSelect }: Asset
               role="option"
               aria-selected={asset.id === selectedAsset.id}
             >
-              {/* Color dot */}
-              <span
-                className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: asset.color }}
-              />
+              {/* Token logo */}
+              <TokenLogo asset={asset} size={24} />
               
               {/* Asset info */}
               <div className="flex-1 min-w-0">

@@ -32,6 +32,7 @@ ASSETS_FILE = PROJECT_ROOT / "scripts" / "assets.json"
 WEB_DIR = PROJECT_ROOT / "web"
 PUBLIC_DATA_DIR = WEB_DIR / "public" / "static"
 AVATARS_DIR = WEB_DIR / "public" / "avatars"
+LOGOS_DIR = WEB_DIR / "public" / "logos"
 
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
