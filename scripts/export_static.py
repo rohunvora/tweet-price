@@ -147,10 +147,16 @@ def export_timeframe(
 
     with open(filepath, "w") as f:
         json.dump(output, f, separators=(",", ":"))
-    
+
+    # SAFETY CHECK: Verify no duplicate timestamps in output
+    # lightweight-charts crashes on duplicates - fail loudly if this ever happens
+    timestamps = [c["t"] for c in candles]
+    if len(timestamps) != len(set(timestamps)):
+        raise ValueError(f"CRITICAL: Duplicate timestamps in {filepath} - this will crash the chart!")
+
     size_kb = filepath.stat().st_size / 1024
     print(f"    {timeframe}: {len(candles):,} candles ({size_kb:.1f} KB)")
-    
+
     return len(candles)
 
 
@@ -225,7 +231,12 @@ def export_1m_chunked(
         
         with open(filepath, "w") as f:
             json.dump(output, f, separators=(",", ":"))
-        
+
+        # SAFETY CHECK: Verify no duplicate timestamps
+        timestamps = [c["t"] for c in candles]
+        if len(timestamps) != len(set(timestamps)):
+            raise ValueError(f"CRITICAL: Duplicate timestamps in {filepath} - this will crash the chart!")
+
         size_kb = filepath.stat().st_size / 1024
         print(f"    1m/{month_key}: {len(candles):,} candles ({size_kb:.1f} KB)")
         total += len(candles)
