@@ -118,6 +118,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   const [avatarLoaded, setAvatarLoaded] = useState(false);
   const [availableTimeframes, setAvailableTimeframes] = useState<Set<Timeframe>>(new Set(['1d']));
   const [noData, setNoData] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(800);
 
   // ---------------------------------------------------------------------------
   // Sync refs with state/props
@@ -233,6 +234,35 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       .sort((a, b) => a.timestamp - b.timestamp);
 
     if (visibleTweets.length === 0) return;
+
+    // -------------------------------------------------------------------------
+    // Helper: emit a cluster from accumulated tweets
+    // -------------------------------------------------------------------------
+    function emitCluster(
+      tweets: TweetEvent[],
+      x: number,
+      seriesApi: ISeriesApi<'Candlestick'>,
+      clusterArray: TweetClusterDisplay[]
+    ) {
+      const avgPrice = tweets.reduce((sum, t) => sum + (t.price_at_tweet || 0), 0) / tweets.length;
+      const avgTimestamp = tweets.reduce((sum, t) => sum + t.timestamp, 0) / tweets.length;
+      const changes = tweets.filter(t => t.change_24h_pct !== null).map(t => t.change_24h_pct!);
+      const avgChange = changes.length > 0 ? changes.reduce((a, b) => a + b, 0) / changes.length : null;
+      const y = seriesApi.priceToCoordinate(avgPrice);
+      
+      if (y !== null) {
+        clusterArray.push({
+          tweets: [...tweets],
+          x,
+          y,
+          avgPrice,
+          avgTimestamp,
+          avgChange,
+          timeSincePrev: null,
+          pctSincePrev: null,
+        });
+      }
+    }
 
     // -------------------------------------------------------------------------
     // Build clusters from overlapping markers
@@ -394,33 +424,6 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     }
   }, [findNearestCandleTime]);
 
-  /** Helper: emit a cluster from accumulated tweets */
-  function emitCluster(
-    tweets: TweetEvent[],
-    x: number,
-    series: ISeriesApi<'Candlestick'>,
-    clusters: TweetClusterDisplay[]
-  ) {
-    const avgPrice = tweets.reduce((sum, t) => sum + (t.price_at_tweet || 0), 0) / tweets.length;
-    const avgTimestamp = tweets.reduce((sum, t) => sum + t.timestamp, 0) / tweets.length;
-    const changes = tweets.filter(t => t.change_24h_pct !== null).map(t => t.change_24h_pct!);
-    const avgChange = changes.length > 0 ? changes.reduce((a, b) => a + b, 0) / changes.length : null;
-    const y = series.priceToCoordinate(avgPrice);
-    
-    if (y !== null) {
-      clusters.push({
-        tweets: [...tweets],
-        x,
-        y,
-        avgPrice,
-        avgTimestamp,
-        avgChange,
-        timeSincePrev: null,
-        pctSincePrev: null,
-      });
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Initialize chart
   // ---------------------------------------------------------------------------
@@ -490,6 +493,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       const { width, height } = container.getBoundingClientRect();
       if (width > 0 && height > 0) {
         chart.applyOptions({ width, height });
+        setContainerWidth(width);
         drawMarkers();
       }
     });
@@ -565,8 +569,8 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       for (const tf of ['1d', '1h', '15m', '1m'] as Timeframe[]) {
         try {
           const path = tf === '1m'
-            ? `/data/${asset.id}/prices_1m_index.json`
-            : `/data/${asset.id}/prices_${tf}.json`;
+            ? `/static/${asset.id}/prices_1m_index.json`
+            : `/static/${asset.id}/prices_${tf}.json`;
           const response = await fetch(path, { method: 'HEAD' });
           if (response.ok) {
             available.add(tf);
@@ -804,7 +808,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         <div
           className="absolute z-30 pointer-events-none bg-[#1E222D] border border-[#2A2E39] rounded-lg p-3 shadow-xl max-w-xs"
           style={{
-            left: Math.min(tooltipPos.x + 20, (containerRef.current?.clientWidth || 400) - 300),
+            left: Math.min(tooltipPos.x + 20, containerWidth - 300),
             top: Math.max(tooltipPos.y - 60, 10),
           }}
         >
