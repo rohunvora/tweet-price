@@ -131,6 +131,7 @@ def scrape_date_range(
     username: str,
     since: str,
     until: str,
+    keyword: Optional[str] = None,
     max_tweets: int = MAX_TWEETS_PER_CHUNK,
     headless: bool = False,
     verbose: bool = True
@@ -142,6 +143,7 @@ def scrape_date_range(
         username: Twitter username (without @)
         since: Start date YYYY-MM-DD
         until: End date YYYY-MM-DD (exclusive)
+        keyword: Optional keyword to filter tweets (e.g., "useless" for coin mentions)
         max_tweets: Safety limit
         headless: Run headless (may trigger bot detection)
         verbose: Print progress
@@ -157,8 +159,11 @@ def scrape_date_range(
     tweets = []
     seen_ids = set()
     
-    # Build URL with date params
-    url = f"{NITTER_INSTANCE}/{username}/search?f=tweets&q=&since={since}&until={until}"
+    # Build URL with date params and optional keyword filter
+    # URL encode the keyword for the search query
+    from urllib.parse import quote_plus
+    query = quote_plus(keyword) if keyword else ""
+    url = f"{NITTER_INSTANCE}/{username}/search?f=tweets&q={query}&since={since}&until={until}"
     
     if verbose:
         print(f"[NITTER] Scraping {username}: {since} to {until}")
@@ -334,6 +339,7 @@ def scrape_tweets_chunked(
     username: str,
     since: datetime,
     until: datetime,
+    keyword: Optional[str] = None,
     chunk_days: int = DEFAULT_CHUNK_DAYS,
     headless: bool = False,
     verbose: bool = True
@@ -345,6 +351,7 @@ def scrape_tweets_chunked(
         username: Twitter username
         since: Start datetime
         until: End datetime
+        keyword: Optional keyword to filter tweets (e.g., "useless" for coin mentions)
         chunk_days: Days per chunk
         headless: Run headless
         verbose: Print progress
@@ -359,6 +366,8 @@ def scrape_tweets_chunked(
     
     if verbose:
         print(f"[NITTER] Scraping @{username} from {since.date()} to {until.date()}")
+        if keyword:
+            print(f"[NITTER] Keyword filter: \"{keyword}\"")
         print(f"[NITTER] Splitting into ~{total_chunks} chunks of {chunk_days} days")
         print("=" * 60)
     
@@ -376,6 +385,7 @@ def scrape_tweets_chunked(
             username=username,
             since=since_str,
             until=until_str,
+            keyword=keyword,
             headless=headless,
             verbose=verbose
         )
@@ -412,6 +422,7 @@ def scrape_and_save(
     asset_id: str,
     since: Optional[str] = None,
     until: Optional[str] = None,
+    keyword: Optional[str] = None,
     backfill: bool = False,
     full: bool = False,
     chunk_days: int = DEFAULT_CHUNK_DAYS,
@@ -426,6 +437,10 @@ def scrape_and_save(
     - Backfill: Auto-detect gaps and fill from launch to oldest tweet
     - Full: Scrape from launch to now
     
+    Args:
+        keyword: Optional keyword filter (e.g., "useless"). 
+                 If None, uses asset's keyword_filter from config if set.
+    
     Returns summary dict.
     """
     conn = get_connection()
@@ -439,6 +454,11 @@ def scrape_and_save(
     
     username = asset['founder']
     launch_date = asset['launch_date']
+    
+    # Use keyword from args, or fall back to asset's configured keyword_filter
+    effective_keyword = keyword
+    if effective_keyword is None:
+        effective_keyword = asset.get('keyword_filter')
     if isinstance(launch_date, str):
         launch_date = datetime.fromisoformat(launch_date.replace('Z', '+00:00'))
     if launch_date.tzinfo is None:
@@ -447,6 +467,8 @@ def scrape_and_save(
     if verbose:
         print(f"\n[NITTER] Asset: {asset['name']} (@{username})")
         print(f"[NITTER] Launch date: {launch_date.date()}")
+        if effective_keyword:
+            print(f"[NITTER] Keyword filter: \"{effective_keyword}\"")
     
     # Determine date range
     if since and until:
@@ -500,6 +522,7 @@ def scrape_and_save(
         username=username,
         since=since_dt,
         until=until_dt,
+        keyword=effective_keyword,
         chunk_days=chunk_days,
         headless=headless,
         verbose=verbose
@@ -556,6 +579,9 @@ Examples:
   # Full scrape for new asset
   python nitter_scraper.py --asset pump --full
   
+  # Keyword filter for non-founders (only tweets mentioning the coin)
+  python nitter_scraper.py --asset useless --keyword useless --full
+  
   # Non-headless mode (more reliable but shows browser)
   python nitter_scraper.py --asset useless --backfill --no-headless
 """
@@ -564,6 +590,7 @@ Examples:
     parser.add_argument('--asset', '-a', required=True, help='Asset ID from assets.json')
     parser.add_argument('--since', '-s', help='Start date YYYY-MM-DD')
     parser.add_argument('--until', '-u', help='End date YYYY-MM-DD')
+    parser.add_argument('--keyword', '-k', help='Keyword filter (e.g., "useless" for coin mentions)')
     parser.add_argument('--backfill', '-b', action='store_true', help='Auto-fill gap from launch to oldest tweet')
     parser.add_argument('--full', '-f', action='store_true', help='Full scrape from launch to now')
     parser.add_argument('--chunk-days', type=int, default=DEFAULT_CHUNK_DAYS, help=f'Days per scraping chunk (default: {DEFAULT_CHUNK_DAYS})')
@@ -592,6 +619,7 @@ Examples:
         asset_id=args.asset,
         since=args.since,
         until=args.until,
+        keyword=args.keyword,
         backfill=args.backfill,
         full=args.full,
         chunk_days=args.chunk_days,

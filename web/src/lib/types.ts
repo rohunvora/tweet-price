@@ -47,6 +47,12 @@ export interface TweetEventsData {
   price_definition: string;
   count: number;
   events: TweetEvent[];
+  /** "founder" (default) or "adopter" for traders who adopted the coin */
+  founder_type?: 'founder' | 'adopter';
+  /** Keyword filter applied to tweets (e.g., "useless") */
+  keyword_filter?: string;
+  /** Human-readable note explaining the filter (e.g., "Only tweets mentioning $USELESS") */
+  tweet_filter_note?: string;
 }
 
 // =============================================================================

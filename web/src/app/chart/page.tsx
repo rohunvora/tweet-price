@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { loadTweetEvents, loadAssets } from '@/lib/dataLoader';
-import { TweetEvent, Asset } from '@/lib/types';
+import { TweetEvent, TweetEventsData, Asset } from '@/lib/types';
 import AssetSelector from '@/components/AssetSelector';
 
 const Chart = dynamic(() => import('@/components/Chart'), { 
@@ -69,6 +69,7 @@ function ChartPageContent() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [tweetEvents, setTweetEvents] = useState<TweetEvent[]>([]);
+  const [eventsMetadata, setEventsMetadata] = useState<Partial<TweetEventsData>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,8 +99,16 @@ function ChartPageContent() {
         // Load tweet events for this asset
         const eventsData = await loadTweetEvents(assetId);
         setTweetEvents(eventsData.events);
+        setEventsMetadata({
+          founder_type: eventsData.founder_type,
+          keyword_filter: eventsData.keyword_filter,
+          tweet_filter_note: eventsData.tweet_filter_note,
+        });
         
         console.log(`[ChartPage] Loaded ${eventsData.events.length} tweets for ${asset.name}`);
+        if (eventsData.keyword_filter) {
+          console.log(`[ChartPage] Keyword filter: "${eventsData.keyword_filter}"`);
+        }
         
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -197,8 +206,17 @@ function ChartPageContent() {
             className="flex items-center gap-2 text-[#787B86] hover:text-[#D1D4DC] text-xs"
           >
             <FounderAvatar founder={selectedAsset.founder} color={selectedAsset.color} />
-            <span>@{selectedAsset.founder} tweets shown</span>
+            <span>@{selectedAsset.founder}</span>
           </a>
+          {/* Keyword filter indicator */}
+          {eventsMetadata.tweet_filter_note && (
+            <span 
+              className="text-xs px-2 py-0.5 rounded bg-[#2A2E39] text-[#787B86] border border-[#363A45]"
+              title={`Keyword filter: "${eventsMetadata.keyword_filter}"`}
+            >
+              {eventsMetadata.tweet_filter_note}
+            </span>
+          )}
         </div>
         <div className="text-[#787B86] text-xs">
           {tweetEvents.length} tweets • Data from X API & GeckoTerminal

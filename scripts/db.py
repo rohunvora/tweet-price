@@ -38,6 +38,7 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
             id VARCHAR PRIMARY KEY,
             name VARCHAR NOT NULL,
             founder VARCHAR NOT NULL,
+            founder_type VARCHAR DEFAULT 'founder',
             network VARCHAR,
             pool_address VARCHAR,
             token_mint VARCHAR,
@@ -47,6 +48,8 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
             launch_date TIMESTAMP NOT NULL,
             color VARCHAR,
             enabled BOOLEAN DEFAULT true,
+            keyword_filter VARCHAR,
+            tweet_filter_note VARCHAR,
             created_at TIMESTAMP DEFAULT now(),
             updated_at TIMESTAMP DEFAULT now()
         )
@@ -70,6 +73,7 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
             retweets INTEGER DEFAULT 0,
             replies INTEGER DEFAULT 0,
             impressions INTEGER DEFAULT 0,
+            is_filtered BOOLEAN DEFAULT FALSE,
             fetched_at TIMESTAMP DEFAULT now(),
             FOREIGN KEY (asset_id) REFERENCES assets(id)
         )
@@ -155,6 +159,7 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
             JOIN assets a ON t.asset_id = a.id
             WHERE a.enabled = true
               AND t.timestamp >= a.launch_date
+              AND (t.is_filtered = FALSE OR t.is_filtered IS NULL)
         ),
         -- Get best available price at tweet time (prefer 1m > 1h > 1d)
         -- Only use data if fresh enough for its timeframe
@@ -263,6 +268,7 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
         JOIN assets a ON t.asset_id = a.id
         WHERE a.enabled = true
           AND t.timestamp >= a.launch_date
+          AND (t.is_filtered = FALSE OR t.is_filtered IS NULL)
         ORDER BY t.timestamp
     """)
     
@@ -335,13 +341,14 @@ def load_assets_from_json(conn: duckdb.DuckDBPyConnection, assets_file: Path = A
     count = 0
     for asset in config.get("assets", []):
         conn.execute("""
-            INSERT INTO assets (id, name, founder, network, pool_address, token_mint,
+            INSERT INTO assets (id, name, founder, founder_type, network, pool_address, token_mint,
                                coingecko_id, price_source, backfill_source, launch_date, 
-                               color, enabled, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+                               color, enabled, keyword_filter, tweet_filter_note, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
             ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
                 founder = EXCLUDED.founder,
+                founder_type = EXCLUDED.founder_type,
                 network = EXCLUDED.network,
                 pool_address = EXCLUDED.pool_address,
                 token_mint = EXCLUDED.token_mint,
@@ -351,11 +358,14 @@ def load_assets_from_json(conn: duckdb.DuckDBPyConnection, assets_file: Path = A
                 launch_date = EXCLUDED.launch_date,
                 color = EXCLUDED.color,
                 enabled = EXCLUDED.enabled,
+                keyword_filter = EXCLUDED.keyword_filter,
+                tweet_filter_note = EXCLUDED.tweet_filter_note,
                 updated_at = now()
         """, [
             asset["id"],
             asset["name"],
             asset["founder"],
+            asset.get("founder_type", "founder"),
             asset.get("network"),
             asset.get("pool_address"),
             asset.get("token_mint"),
@@ -365,6 +375,8 @@ def load_assets_from_json(conn: duckdb.DuckDBPyConnection, assets_file: Path = A
             asset["launch_date"],
             asset.get("color"),
             asset.get("enabled", True),
+            asset.get("keyword_filter"),
+            asset.get("tweet_filter_note"),
         ])
         count += 1
     
@@ -374,8 +386,8 @@ def load_assets_from_json(conn: duckdb.DuckDBPyConnection, assets_file: Path = A
 def get_asset(conn: duckdb.DuckDBPyConnection, asset_id: str) -> Optional[Dict[str, Any]]:
     """Get a single asset by ID."""
     result = conn.execute("""
-        SELECT id, name, founder, network, pool_address, token_mint, coingecko_id,
-               price_source, backfill_source, launch_date, color, enabled
+        SELECT id, name, founder, founder_type, network, pool_address, token_mint, coingecko_id,
+               price_source, backfill_source, launch_date, color, enabled, keyword_filter, tweet_filter_note
         FROM assets WHERE id = ?
     """, [asset_id]).fetchone()
     
@@ -386,23 +398,26 @@ def get_asset(conn: duckdb.DuckDBPyConnection, asset_id: str) -> Optional[Dict[s
         "id": result[0],
         "name": result[1],
         "founder": result[2],
-        "network": result[3],
-        "pool_address": result[4],
-        "token_mint": result[5],
-        "coingecko_id": result[6],
-        "price_source": result[7],
-        "backfill_source": result[8],
-        "launch_date": result[9],
-        "color": result[10],
-        "enabled": result[11],
+        "founder_type": result[3],
+        "network": result[4],
+        "pool_address": result[5],
+        "token_mint": result[6],
+        "coingecko_id": result[7],
+        "price_source": result[8],
+        "backfill_source": result[9],
+        "launch_date": result[10],
+        "color": result[11],
+        "enabled": result[12],
+        "keyword_filter": result[13],
+        "tweet_filter_note": result[14],
     }
 
 
 def get_enabled_assets(conn: duckdb.DuckDBPyConnection) -> List[Dict[str, Any]]:
     """Get all enabled assets."""
     results = conn.execute("""
-        SELECT id, name, founder, network, pool_address, token_mint, coingecko_id,
-               price_source, backfill_source, launch_date, color, enabled
+        SELECT id, name, founder, founder_type, network, pool_address, token_mint, coingecko_id,
+               price_source, backfill_source, launch_date, color, enabled, keyword_filter, tweet_filter_note
         FROM assets WHERE enabled = true
         ORDER BY name
     """).fetchall()
@@ -412,15 +427,18 @@ def get_enabled_assets(conn: duckdb.DuckDBPyConnection) -> List[Dict[str, Any]]:
             "id": r[0],
             "name": r[1],
             "founder": r[2],
-            "network": r[3],
-            "pool_address": r[4],
-            "token_mint": r[5],
-            "coingecko_id": r[6],
-            "price_source": r[7],
-            "backfill_source": r[8],
-            "launch_date": r[9],
-            "color": r[10],
-            "enabled": r[11],
+            "founder_type": r[3],
+            "network": r[4],
+            "pool_address": r[5],
+            "token_mint": r[6],
+            "coingecko_id": r[7],
+            "price_source": r[8],
+            "backfill_source": r[9],
+            "launch_date": r[10],
+            "color": r[11],
+            "enabled": r[12],
+            "keyword_filter": r[13],
+            "tweet_filter_note": r[14],
         }
         for r in results
     ]
@@ -429,8 +447,8 @@ def get_enabled_assets(conn: duckdb.DuckDBPyConnection) -> List[Dict[str, Any]]:
 def get_all_assets(conn: duckdb.DuckDBPyConnection) -> List[Dict[str, Any]]:
     """Get all assets (including disabled)."""
     results = conn.execute("""
-        SELECT id, name, founder, network, pool_address, token_mint, coingecko_id,
-               price_source, backfill_source, launch_date, color, enabled
+        SELECT id, name, founder, founder_type, network, pool_address, token_mint, coingecko_id,
+               price_source, backfill_source, launch_date, color, enabled, keyword_filter, tweet_filter_note
         FROM assets
         ORDER BY name
     """).fetchall()
@@ -440,15 +458,18 @@ def get_all_assets(conn: duckdb.DuckDBPyConnection) -> List[Dict[str, Any]]:
             "id": r[0],
             "name": r[1],
             "founder": r[2],
-            "network": r[3],
-            "pool_address": r[4],
-            "token_mint": r[5],
-            "coingecko_id": r[6],
-            "price_source": r[7],
-            "backfill_source": r[8],
-            "launch_date": r[9],
-            "color": r[10],
-            "enabled": r[11],
+            "founder_type": r[3],
+            "network": r[4],
+            "pool_address": r[5],
+            "token_mint": r[6],
+            "coingecko_id": r[7],
+            "price_source": r[8],
+            "backfill_source": r[9],
+            "launch_date": r[10],
+            "color": r[11],
+            "enabled": r[12],
+            "keyword_filter": r[13],
+            "tweet_filter_note": r[14],
         }
         for r in results
     ]

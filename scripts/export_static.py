@@ -301,10 +301,16 @@ def export_tweet_events_for_asset(
         "asset": asset_id,
         "asset_name": asset["name"] if asset else asset_id.upper(),
         "founder": asset["founder"] if asset else "",
+        "founder_type": asset.get("founder_type", "founder") if asset else "founder",
         "price_definition": "candle close at minute boundary" if not use_daily_fallback else "daily close",
         "count": len(events),
         "events": events
     }
+    
+    # Add keyword filter note if asset uses keyword filtering
+    if asset and asset.get("keyword_filter"):
+        output["keyword_filter"] = asset["keyword_filter"]
+        output["tweet_filter_note"] = asset.get("tweet_filter_note", f"Only tweets mentioning \"{asset['keyword_filter']}\"")
     
     output_dir.mkdir(parents=True, exist_ok=True)
     filepath = output_dir / "tweet_events.json"

@@ -96,6 +96,7 @@
       "id": "useless",
       "name": "USELESS",
       "founder": "theunipcs",
+      "founder_type": "adopter",
       "network": "solana",
       "pool_address": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp",
       "token_mint": "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk",
@@ -105,7 +106,9 @@
       "launch_date": "2025-05-23T00:00:00Z",
       "color": "#FF4081",
       "enabled": true,
-      "logo": "/logos/useless.png"
+      "logo": "/logos/useless.png",
+      "keyword_filter": "useless",
+      "tweet_filter_note": "Only tweets mentioning $USELESS"
     },
     {
       "id": "pengu",
