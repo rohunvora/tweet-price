@@ -136,15 +136,16 @@ else:
         continue-on-error: true
         timeout-minutes: 10
 
-      - name: Fetch new prices
+      - name: Fetch new prices (1h and 1d only)
         env:
           BIRDEYE_API_KEY: ${{ secrets.BIRDEYE_API_KEY }}
         run: |
-          echo "📊 Fetching new prices..."
+          echo "📊 Fetching new prices (1h and 1d timeframes only)..."
           cd scripts
-          python fetch_prices.py 2>&1 || echo "⚠️ Price fetch had errors (continuing anyway)"
+          # Only fetch 1h and 1d for hourly updates - 1m/15m are too slow
+          python fetch_prices.py -t 1h -t 1d 2>&1 || echo "⚠️ Price fetch had errors (continuing anyway)"
         continue-on-error: true
-        timeout-minutes: 15
+        timeout-minutes: 10
 
       - name: Compute statistics
         run: |
