@@ -75,55 +75,49 @@ jobs:
         id: verify-db
         run: |
           cd scripts
-          python -c "
-import sys
-from db import get_connection
-import json
-from datetime import datetime, timezone
+          python3 << 'PYTHON_SCRIPT'
+          import sys
+          from db import get_connection
+          import json
+          from datetime import datetime, timezone
 
-print('=' * 60)
-print('DATABASE STATUS BEFORE UPDATE')
-print('=' * 60)
-print(f'Current time: {datetime.now(timezone.utc).strftime(\"%Y-%m-%d %H:%M UTC\")}')
-print()
+          print('=' * 60)
+          print('DATABASE STATUS BEFORE UPDATE')
+          print('=' * 60)
+          print(f'Current time: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}')
+          print()
 
-conn = get_connection()
+          conn = get_connection()
 
-with open('assets.json') as f:
-    assets = [a for a in json.load(f)['assets'] if a.get('enabled', True)]
+          with open('assets.json') as f:
+              assets = [a for a in json.load(f)['assets'] if a.get('enabled', True)]
 
-all_ok = True
-for asset in assets:
-    asset_id = asset['id']
+          all_ok = True
+          for asset in assets:
+              asset_id = asset['id']
+              tweet_result = conn.execute('''
+                  SELECT MAX(timestamp) as latest, COUNT(*) as total
+                  FROM tweets WHERE asset_id = ?
+              ''', [asset_id]).fetchone()
+              price_result = conn.execute('''
+                  SELECT MAX(timestamp) as latest, COUNT(*) as total
+                  FROM prices WHERE asset_id = ? AND timeframe = '1h'
+              ''', [asset_id]).fetchone()
+              tweet_latest = tweet_result[0] if tweet_result[0] else 'none'
+              price_latest = price_result[0] if price_result[0] else 'none'
+              print(f'{asset_id.upper():10} | Tweets: {tweet_result[1]:4} (latest: {tweet_latest})')
+              print(f'           | Prices: {price_result[1]:5} 1h candles (latest: {price_latest})')
+              if price_result[1] == 0:
+                  print(f'           | WARNING: No price data!')
+                  all_ok = False
+              print()
 
-    tweet_result = conn.execute('''
-        SELECT MAX(timestamp) as latest, COUNT(*) as total
-        FROM tweets WHERE asset_id = ?
-    ''', [asset_id]).fetchone()
-
-    price_result = conn.execute('''
-        SELECT MAX(timestamp) as latest, COUNT(*) as total
-        FROM prices WHERE asset_id = ? AND timeframe = '1h'
-    ''', [asset_id]).fetchone()
-
-    tweet_latest = tweet_result[0] if tweet_result[0] else 'none'
-    price_latest = price_result[0] if price_result[0] else 'none'
-
-    print(f'{asset_id.upper():10} | Tweets: {tweet_result[1]:4} (latest: {tweet_latest})')
-    print(f'           | Prices: {price_result[1]:5} 1h candles (latest: {price_latest})')
-
-    if price_result[1] == 0:
-        print(f'           | ⚠️  WARNING: No price data!')
-        all_ok = False
-    print()
-
-conn.close()
-
-if not all_ok:
-    print('⚠️  Some assets have missing data - fetch may take longer')
-else:
-    print('✅ All assets have data')
-"
+          conn.close()
+          if not all_ok:
+              print('Some assets have missing data - fetch may take longer')
+          else:
+              print('All assets have data')
+          PYTHON_SCRIPT
           echo "db_verified=true" >> $GITHUB_OUTPUT
 
       - name: Fetch new tweets
@@ -176,60 +170,54 @@ else:
       - name: Validate exported data
         if: steps.export.outputs.export_ok == 'true'
         run: |
-          echo "🔍 Validating exported data..."
+          echo "Validating exported data..."
           cd scripts
-          python -c "
-import json
-import os
-from pathlib import Path
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          from pathlib import Path
 
-static_dir = Path('../web/public/static')
-errors = []
+          static_dir = Path('../web/public/static')
+          errors = []
 
-with open('assets.json') as f:
-    assets = [a for a in json.load(f)['assets'] if a.get('enabled', True)]
+          with open('assets.json') as f:
+              assets = [a for a in json.load(f)['assets'] if a.get('enabled', True)]
 
-print()
-for asset in assets:
-    asset_id = asset['id']
-    asset_dir = static_dir / asset_id
+          print()
+          for asset in assets:
+              asset_id = asset['id']
+              asset_dir = static_dir / asset_id
 
-    # Check required files exist
-    required = ['tweet_events.json', 'prices_1h.json', 'prices_1d.json', 'stats.json']
-    missing = [f for f in required if not (asset_dir / f).exists()]
+              required = ['tweet_events.json', 'prices_1h.json', 'prices_1d.json', 'stats.json']
+              missing = [f for f in required if not (asset_dir / f).exists()]
 
-    if missing:
-        errors.append(f'{asset_id}: missing {missing}')
-        print(f'❌ {asset_id.upper()}: missing {missing}')
-        continue
+              if missing:
+                  errors.append(f'{asset_id}: missing {missing}')
+                  print(f'MISSING {asset_id.upper()}: {missing}')
+                  continue
 
-    # Check tweet_events has data
-    with open(asset_dir / 'tweet_events.json') as f:
-        events = json.load(f)
-        tweet_count = events.get('count', 0)
+              with open(asset_dir / 'tweet_events.json') as f:
+                  tweet_count = json.load(f).get('count', 0)
 
-    # Check prices have data
-    with open(asset_dir / 'prices_1h.json') as f:
-        prices = json.load(f)
-        price_count = prices.get('count', 0)
+              with open(asset_dir / 'prices_1h.json') as f:
+                  price_count = json.load(f).get('count', 0)
 
-    if tweet_count == 0:
-        errors.append(f'{asset_id}: no tweets')
-        print(f'⚠️  {asset_id.upper()}: {tweet_count} tweets, {price_count} price candles')
-    elif price_count == 0:
-        errors.append(f'{asset_id}: no prices')
-        print(f'❌ {asset_id.upper()}: {tweet_count} tweets, {price_count} price candles')
-    else:
-        print(f'✅ {asset_id.upper()}: {tweet_count} tweets, {price_count} price candles')
+              if tweet_count == 0:
+                  errors.append(f'{asset_id}: no tweets')
+                  print(f'WARN {asset_id.upper()}: {tweet_count} tweets, {price_count} prices')
+              elif price_count == 0:
+                  errors.append(f'{asset_id}: no prices')
+                  print(f'ERROR {asset_id.upper()}: {tweet_count} tweets, {price_count} prices')
+              else:
+                  print(f'OK {asset_id.upper()}: {tweet_count} tweets, {price_count} prices')
 
-print()
-if errors:
-    print(f'⚠️  Validation warnings: {len(errors)}')
-    for e in errors:
-        print(f'   - {e}')
-else:
-    print('✅ All assets validated successfully')
-"
+          print()
+          if errors:
+              print(f'Validation warnings: {len(errors)}')
+              for e in errors:
+                  print(f'   - {e}')
+          else:
+              print('All assets validated successfully')
+          PYTHON_SCRIPT
 
       - name: Generate timestamp
         run: |
