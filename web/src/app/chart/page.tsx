@@ -225,6 +225,15 @@ function ChartPageContent() {
               {eventsMetadata.tweet_filter_note}
             </span>
           )}
+          {/* Data quality note */}
+          {selectedAsset.data_note && (
+            <span 
+              className="text-xs px-2 py-0.5 rounded bg-amber-900/30 text-amber-400/80 border border-amber-600/30"
+              title={selectedAsset.data_note}
+            >
+              ⚠️ Limited data
+            </span>
+          )}
         </div>
         <div className="text-[#787B86] text-xs">
           {tweetEvents.length} tweets • Data from X API & GeckoTerminal

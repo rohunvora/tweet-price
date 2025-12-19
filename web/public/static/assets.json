@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "generated_at": "2025-12-19T04:45:13.287771Z",
+  "generated_at": "2025-12-19T06:58:05.041575Z",
   "assets": [
     {
       "id": "pump",
@@ -50,7 +50,8 @@
       "launch_date": "2024-01-31T00:00:00Z",
       "color": "#19FB9B",
       "logo": "/logos/jup.png",
-      "enabled": true
+      "enabled": true,
+      "data_note": "Tweet data starts Apr 2025. Historical data (Jan 2024-Mar 2025) limited to explicit $JUP mentions only due to scraping constraints."
     },
     {
       "id": "monad",

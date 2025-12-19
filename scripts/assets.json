@@ -76,7 +76,8 @@
       "color": "#19FB9B",
       "enabled": true,
       "logo": "/logos/jup.png",
-      "keyword_filter": "jup"
+      "keyword_filter": "jup",
+      "data_note": "Tweet data starts Apr 2025. Historical data (Jan 2024-Mar 2025) limited to explicit $JUP mentions only due to scraping constraints."
     },
     {
       "id": "monad",

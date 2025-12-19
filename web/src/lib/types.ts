@@ -126,6 +126,8 @@ export interface Asset {
   logo?: string;  // Token logo path (e.g., "/logos/pump.png")
   launch_date: string;
   enabled: boolean;
+  /** Optional note about data quality/coverage limitations */
+  data_note?: string;
 }
 
 /** Container for assets data */

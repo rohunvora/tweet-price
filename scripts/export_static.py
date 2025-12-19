@@ -398,7 +398,7 @@ def export_assets_json():
     frontend_assets = []
     for asset in config.get("assets", []):
         if asset.get("enabled", True):
-            frontend_assets.append({
+            frontend_asset = {
                 "id": asset["id"],
                 "name": asset["name"],
                 "founder": asset["founder"],
@@ -407,7 +407,11 @@ def export_assets_json():
                 "color": asset.get("color"),
                 "logo": asset.get("logo"),  # Token logo path
                 "enabled": True,  # All exported assets are enabled
-            })
+            }
+            # Include data_note if present (data quality disclaimer)
+            if asset.get("data_note"):
+                frontend_asset["data_note"] = asset["data_note"]
+            frontend_assets.append(frontend_asset)
     
     output = {
         "version": config.get("version", "1.0.0"),
