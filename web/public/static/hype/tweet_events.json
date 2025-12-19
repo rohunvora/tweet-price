@@ -1,30 +1,11 @@
 {
-  "generated_at": "2025-12-18T21:48:23.579847Z",
+  "generated_at": "2025-12-19T00:48:50.896689Z",
   "asset": "hype",
   "asset_name": "HYPE",
   "founder": "chameleon_jeff",
   "price_definition": "candle close at minute boundary",
-  "count": 35,
+  "count": 34,
   "events": [
-    {
-      "tweet_id": "1862885996846805222",
-      "asset_id": "hype",
-      "asset_name": "HYPE",
-      "founder": "chameleon_jeff",
-      "asset_color": "#00D1FF",
-      "timestamp": 1732981607,
-      "timestamp_iso": "2024-11-30T10:46:47Z",
-      "text": "It's inspiring to see tens of thousands of community members secure life-changing wealth as part of the Hyperliquid genesis event. Importantly, none of these people were insiders. They:\n\n1) believed in the vision for a better financial system when no one else would\n2) acted on",
-      "likes": 5655,
-      "retweets": 1165,
-      "replies": 998,
-      "impressions": 903242,
-      "price_at_tweet": null,
-      "price_1h": null,
-      "price_24h": null,
-      "change_1h_pct": null,
-      "change_24h_pct": null
-    },
     {
       "tweet_id": "1876837450405879810",
       "asset_id": "hype",

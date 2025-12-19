@@ -789,7 +789,7 @@ def init_db(db_path: Path = ANALYTICS_DB) -> duckdb.DuckDBPyConnection:
 # OUTLIER DETECTION FUNCTIONS (for CLI)
 # =============================================================================
 
-OUTLIER_THRESHOLD_STD = 10  # Default threshold
+OUTLIER_THRESHOLD_STD = 5  # Default threshold (lower catches more outliers)
 OUTLIER_MIN_CANDLES = 20    # Minimum candles for detection
 
 

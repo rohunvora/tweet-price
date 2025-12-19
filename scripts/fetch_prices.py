@@ -48,7 +48,7 @@ BE_MAX_CANDLES = 1000  # Birdeye limit
 RATE_LIMIT_DELAY = 0.5  # Be nice to the APIs
 
 # Outlier detection defaults
-OUTLIER_THRESHOLD_STD = 10  # Flag candles > N std deviations from median
+OUTLIER_THRESHOLD_STD = 5  # Flag candles > N std deviations from median
 OUTLIER_MIN_CANDLES = 20    # Need at least this many candles for detection
 
 # Hyperliquid interval mapping
