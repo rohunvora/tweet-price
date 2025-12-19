@@ -580,20 +580,30 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     chartRef.current = chart;
     seriesRef.current = series;
 
-    // Resize observer
+    // Resize observer with double-RAF to let chart settle before redrawing markers
     const resizeObserver = new ResizeObserver(() => {
       const { width, height } = container.getBoundingClientRect();
       if (width > 0 && height > 0) {
         chart.applyOptions({ width, height });
         setContainerWidth(width);
-        drawMarkers();
+        // Wait for chart to finish internal resize before redrawing markers
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            drawMarkers();
+          });
+        });
       }
     });
     resizeObserver.observe(container);
 
-    // Redraw markers on pan/zoom, cancel pending zoom if user interacts
+    // Redraw markers on pan/zoom (X-axis), cancel pending zoom if user interacts
     chart.timeScale().subscribeVisibleTimeRangeChange(() => {
       pendingZoomRef.current = null;
+      drawMarkers();
+    });
+
+    // Redraw markers on price scale change (Y-axis)
+    chart.priceScale('right').subscribeVisiblePriceRangeChange(() => {
       drawMarkers();
     });
 
