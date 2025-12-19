@@ -232,15 +232,14 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     const rangeTo = visibleRange.to as number;
     const visibleSeconds = rangeTo - rangeFrom;
     
-    // Responsive clustering threshold (pixels on X-axis)
-    const isMobile = width < 768;
-    const clusterThreshold = isMobile ? 45 : 35;
-    
     // Adaptive sizing: smaller markers when zoomed out, larger when zoomed in
     // zoomFactor: 1.0 at 7 days visible, 0.4 at very zoomed out
     const zoomFactor = Math.min(1, Math.max(0.4, 86400 * 7 / visibleSeconds));
     const bubbleSize = Math.round(24 + 16 * zoomFactor);  // 24-40px
     const bubbleRadius = bubbleSize / 2;
+
+    // Adaptive clustering threshold: scales with bubble size (original behavior)
+    const clusterThreshold = bubbleSize + 8;  // 32-48px depending on zoom
     
     // Font sizes for labels
     const timeFontSize = Math.round(8 + 4 * zoomFactor);
@@ -310,6 +309,8 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       if (clusterX !== null && Math.abs(x - clusterX) < clusterThreshold) {
         // Add to existing cluster
         currentTweets.push(tweet);
+        // Drift cluster center toward new tweet (original behavior)
+        clusterX = (clusterX * (currentTweets.length - 1) + x) / currentTweets.length;
         sumPrice += tweet.price_at_tweet!;
         sumTimestamp += tweet.timestamp;
         if (tweet.change_1h_pct !== null) {
