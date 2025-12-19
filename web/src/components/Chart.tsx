@@ -322,6 +322,17 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       }
     }
 
+    // Debug: log gap info
+    if (clusters.length > 1) {
+      const gaps = clusters.slice(1).map((c, i) => ({
+        gap: c.timeSincePrev,
+        gapHours: c.timeSincePrev ? (c.timeSincePrev / 3600).toFixed(1) : 0,
+        threshold: SILENCE_GAP_THRESHOLD / 3600,
+        meetsThreshold: c.timeSincePrev && c.timeSincePrev > SILENCE_GAP_THRESHOLD
+      }));
+      console.log('[Chart] Gap analysis:', gaps);
+    }
+
     // -------------------------------------------------------------------------
     // Draw silence gap lines between clusters
     // -------------------------------------------------------------------------
