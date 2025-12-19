@@ -119,14 +119,14 @@ export default function AssetSelector({ assets, selectedAsset, onSelect }: Asset
       {/* Dropdown menu */}
       {isOpen && (
         <div
-          className="absolute top-full left-0 mt-1 w-64 bg-[#1E222D] border border-[#2A2E39] rounded-lg shadow-xl z-50 overflow-hidden"
+          className="absolute top-full left-0 mt-1 w-[calc(100vw-2rem)] md:w-64 max-w-xs bg-[#1E222D] border border-[#2A2E39] rounded-lg shadow-xl z-50 overflow-hidden"
           role="listbox"
         >
           {assets.map(asset => (
             <button
               key={asset.id}
               onClick={() => handleSelect(asset)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-4 md:py-2.5 text-left transition-colors ${
                 asset.id === selectedAsset.id
                   ? 'bg-[#2A2E39]'
                   : 'hover:bg-[#252930]'

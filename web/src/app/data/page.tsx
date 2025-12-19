@@ -1,12 +1,13 @@
 'use client';
 
-import { Suspense, useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { loadTweetEvents, loadAssets } from '@/lib/dataLoader';
 import { TweetEvent, Asset } from '@/lib/types';
 import DataTable from '@/components/DataTable';
 import AssetSelector from '@/components/AssetSelector';
+import { TweetCard } from '@/components/TweetCard';
 
 /**
  * Avatar component with fallback to colored circle
@@ -62,9 +63,17 @@ function DataPageContent() {
   const [tweetEvents, setTweetEvents] = useState<TweetEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchFilter, setSearchFilter] = useState('');
 
   // Get asset ID from URL, default to 'pump'
   const assetId = searchParams.get('asset') || 'pump';
+  
+  // Filter events for mobile card view
+  const filteredEvents = useMemo(() => {
+    if (!searchFilter) return tweetEvents;
+    const lower = searchFilter.toLowerCase();
+    return tweetEvents.filter(e => e.text.toLowerCase().includes(lower));
+  }, [tweetEvents, searchFilter]);
 
   useEffect(() => {
     async function init() {
@@ -146,23 +155,26 @@ function DataPageContent() {
       {/* Header */}
       <header className="border-b border-[#30363D] bg-[#161B22]">
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            {/* Left side */}
             <div className="flex items-center gap-4">
               <AssetSelector
                 assets={assets}
                 selectedAsset={selectedAsset}
                 onSelect={handleAssetSelect}
               />
-              <div>
+              <div className="hidden md:block">
                 <h1 className="text-xl font-bold text-[#C9D1D9]">
                   ${selectedAsset.name} Tweet Analysis
                 </h1>
                 <p className="text-sm text-[#8B949E] mt-1">
-                  Analyzing the correlation between @{selectedAsset.founder}&apos;s tweets and ${selectedAsset.name} price
+                  Analyzing @{selectedAsset.founder}&apos;s tweets
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            
+            {/* Right side - desktop only */}
+            <div className="hidden md:flex items-center gap-2">
               <Link 
                 href={`/chart?asset=${selectedAsset.id}`}
                 className="px-4 py-2 text-sm bg-[#21262D] text-[#8B949E] hover:bg-[#30363D] hover:text-[#C9D1D9] rounded-lg transition-colors"
@@ -179,17 +191,52 @@ function DataPageContent() {
                 <span className="text-[#C9D1D9]">@{selectedAsset.founder}</span>
               </a>
             </div>
+            
+            {/* Mobile: Chart link */}
+            <Link 
+              href={`/chart?asset=${selectedAsset.id}`}
+              className="md:hidden text-sm text-[#58A6FF]"
+            >
+              ← Back to Chart
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* Data Table */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
-        <DataTable events={tweetEvents} founder={selectedAsset.founder} assetName={selectedAsset.name} />
+      {/* Main content */}
+      <main className="flex-1 max-w-7xl mx-auto w-full">
+        {/* Mobile: Card view */}
+        <div className="md:hidden px-4 py-4">
+          {/* Search */}
+          <input
+            type="text"
+            placeholder="Search tweets..."
+            value={searchFilter}
+            onChange={e => setSearchFilter(e.target.value)}
+            className="w-full px-4 py-3 mb-4 bg-[#0D1117] border border-[#30363D] rounded-xl text-[#C9D1D9] placeholder-[#6E7681] focus:outline-none focus:border-[#58A6FF]"
+          />
+          
+          {/* Cards */}
+          <div className="pb-safe">
+            {filteredEvents.map(event => (
+              <TweetCard key={event.tweet_id} event={event} founder={selectedAsset.founder} />
+            ))}
+          </div>
+          
+          {/* Count */}
+          <div className="text-center text-sm text-[#6E7681] py-4">
+            {filteredEvents.length} tweets
+          </div>
+        </div>
+        
+        {/* Desktop: Table view */}
+        <div className="hidden md:block px-4 py-6">
+          <DataTable events={tweetEvents} founder={selectedAsset.founder} assetName={selectedAsset.name} />
+        </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-[#30363D] bg-[#161B22] py-4">
+      {/* Footer - desktop only */}
+      <footer className="hidden md:block border-t border-[#30363D] bg-[#161B22] py-4">
         <div className="max-w-7xl mx-auto px-4 text-center text-sm text-[#6E7681]">
           <p>
             Built with data from X API & GeckoTerminal. Not financial advice.

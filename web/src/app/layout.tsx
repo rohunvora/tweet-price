@@ -1,5 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,  // Allow zoom for accessibility
+};
 
 export const metadata: Metadata = {
   title: "Tweet-Price Correlation Analyzer",

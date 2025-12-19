@@ -162,20 +162,20 @@ function ChartPageContent() {
 
   return (
     <div className="h-screen bg-[#131722] flex flex-col">
-      {/* Top toolbar - TradingView style */}
-      <div className="h-10 bg-[#1E222D] border-b border-[#2A2E39] flex items-center px-2 gap-2">
-        {/* Asset selector */}
+      {/* Top toolbar */}
+      <div className="h-14 md:h-10 bg-[#1E222D] border-b border-[#2A2E39] flex items-center px-3 md:px-2 gap-2">
+        {/* Asset selector - always visible */}
         <AssetSelector 
           assets={assets}
           selectedAsset={selectedAsset}
           onSelect={handleAssetSelect}
         />
         
-        {/* Network badge */}
-        <span className="text-[#787B86] text-xs">/USD</span>
+        {/* Network badge - desktop only */}
+        <span className="text-[#787B86] text-xs hidden md:inline">/USD</span>
         
-        {/* Navigation */}
-        <div className="flex items-center gap-1 ml-auto">
+        {/* Navigation - desktop only */}
+        <div className="hidden md:flex items-center gap-1 ml-auto">
           <Link 
             href={`/chart?asset=${selectedAsset.id}`}
             className="px-3 py-1 text-xs bg-[#2962FF] text-white rounded"
@@ -189,6 +189,14 @@ function ChartPageContent() {
             Data Table
           </Link>
         </div>
+        
+        {/* Mobile: Data link */}
+        <Link 
+          href={`/data?asset=${selectedAsset.id}`}
+          className="md:hidden ml-auto px-3 py-2 text-sm text-[#787B86]"
+        >
+          Data
+        </Link>
       </div>
 
       {/* Chart area */}
@@ -196,8 +204,8 @@ function ChartPageContent() {
         <Chart key={selectedAsset.id} tweetEvents={tweetEvents} asset={selectedAsset} />
       </div>
 
-      {/* Bottom bar */}
-      <div className="h-8 bg-[#1E222D] border-t border-[#2A2E39] flex items-center px-4 justify-between">
+      {/* Bottom bar - hidden on mobile (info is in bottom sheet) */}
+      <div className="hidden md:flex h-8 bg-[#1E222D] border-t border-[#2A2E39] items-center px-4 justify-between">
         <div className="flex items-center gap-4">
           <a
             href={`https://twitter.com/${selectedAsset.founder}`}

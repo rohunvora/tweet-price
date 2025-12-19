@@ -13,6 +13,8 @@ import {
 import { Timeframe, TweetEvent, Candle, Asset } from '@/lib/types';
 import { loadPrices, toCandlestickData, getSortedTweetTimestamps } from '@/lib/dataLoader';
 import { formatTimeGap, formatPctChange } from '@/lib/formatters';
+import { useMobile } from '@/lib/useMobile';
+import { TweetBottomSheet } from './TweetBottomSheet';
 
 // =============================================================================
 // Constants
@@ -126,6 +128,14 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   const [availableTimeframes, setAvailableTimeframes] = useState<Set<Timeframe>>(new Set(['1d']));
   const [noData, setNoData] = useState(false);
   const [containerWidth, setContainerWidth] = useState(800);
+  
+  // NEW: Mobile-only state (additive)
+  const [selectedTweet, setSelectedTweet] = useState<TweetEvent | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  
+  // Mobile detection for behavior changes
+  const isMobile = useMobile();
+  const isMobileRef = useRef(false);
 
   // ---------------------------------------------------------------------------
   // Sync refs with state/props
@@ -134,6 +144,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   useEffect(() => { showBubblesRef.current = showBubbles; }, [showBubbles]);
   useEffect(() => { hoveredTweetRef.current = hoveredTweet; }, [hoveredTweet]);
   useEffect(() => { assetRef.current = asset; }, [asset]);
+  useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
   useEffect(() => {
     sortedTweetTimestampsRef.current = getSortedTweetTimestamps(tweetEvents);
   }, [tweetEvents]);
@@ -318,6 +329,9 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     const pctFontSize = Math.round(9 + 4 * zoomFactor);
     const labelSpacing = Math.round(6 + 4 * zoomFactor);
     
+    // Only draw gap annotations when zoomed in enough (prevents clutter on mobile)
+    const shouldDrawGaps = visibleSeconds < 30 * 86400; // Only when < 30 days visible
+    
     ctx.setLineDash([6, 4]);
     ctx.lineWidth = 1.5;
     
@@ -325,7 +339,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       const prev = clusters[i - 1];
       const curr = clusters[i];
       
-      if (curr.timeSincePrev && curr.timeSincePrev > SILENCE_GAP_THRESHOLD) {
+      if (shouldDrawGaps && curr.timeSincePrev && curr.timeSincePrev > SILENCE_GAP_THRESHOLD) {
         const isNegative = curr.pctSincePrev !== null && curr.pctSincePrev < 0;
         ctx.strokeStyle = isNegative ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)';
         
@@ -364,7 +378,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     // -------------------------------------------------------------------------
     // Draw ongoing silence indicator (from last tweet to current price)
     // -------------------------------------------------------------------------
-    if (clusters.length > 0) {
+    if (shouldDrawGaps && clusters.length > 0) {
       const lastCluster = clusters[clusters.length - 1];
       const candles = candlesRef.current;
       
@@ -645,6 +659,14 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
 
       for (const cluster of clustersRef.current) {
         if (Math.hypot(cluster.x - x, cluster.y - y) < CLICK_RADIUS) {
+          // NEW: Mobile branch - open bottom sheet
+          if (isMobileRef.current) {
+            setSelectedTweet(cluster.tweets[0]);
+            setSheetOpen(true);
+            return;
+          }
+          
+          // EXISTING: Desktop branch (unchanged)
           if (cluster.tweets.length > 1) {
             // Multi-tweet cluster: zoom in
             zoomToClusterRef.current?.(cluster);
@@ -863,8 +885,8 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         style={{ zIndex: 10, pointerEvents: 'none' }}
       />
 
-      {/* Top controls */}
-      <div className="absolute top-2 left-2 z-20 flex items-center gap-2">
+      {/* Top controls - desktop only */}
+      <div className="absolute top-2 left-2 z-20 hidden md:flex items-center gap-2">
         <button
           onClick={() => setShowBubbles(!showBubbles)}
           className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs transition-colors ${
@@ -893,8 +915,15 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         </div>
       </div>
 
-      {/* Timeframe selector */}
-      <div className="absolute bottom-2 left-2 flex items-center gap-1 z-20">
+      {/* Timeframe selector - bottom bar on mobile, corner on desktop */}
+      <div className="absolute z-20
+                     bottom-0 left-0 right-0 
+                     md:bottom-2 md:left-2 md:right-auto
+                     flex items-center justify-around md:justify-start gap-1
+                     bg-[#1E222D] md:bg-transparent 
+                     py-3 md:py-0 
+                     border-t border-[#2A2E39] md:border-0
+                     pb-safe">
         {TIMEFRAMES.map((tf) => {
           const isAvailable = availableTimeframes.has(tf.value);
           const isActive = timeframe === tf.value;
@@ -904,11 +933,11 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
               onClick={() => isAvailable && setTimeframe(tf.value)}
               disabled={!isAvailable}
               title={!isAvailable ? `${tf.label} data not available for ${asset.name}` : undefined}
-              className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+              className={`px-4 py-2 md:px-2 md:py-1 text-sm md:text-xs font-medium rounded transition-colors ${
                 isActive
                   ? 'text-white'
                   : isAvailable
-                    ? 'text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39] asset-accent'
+                    ? 'text-[#787B86] hover:text-[#D1D4DC] md:hover:bg-[#2A2E39]'
                     : 'text-[#3A3E49] cursor-not-allowed'
               }`}
               style={isActive ? { backgroundColor: asset.color } : undefined}
@@ -917,14 +946,16 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
             </button>
           );
         })}
-        <span className="ml-3 text-[10px] text-[#555] select-none">
-          Drag to pan • Scroll to zoom
-        </span>
       </div>
       
-      {/* Legend */}
+      {/* Help text - desktop only */}
+      <span className="hidden md:block absolute bottom-2 left-32 text-[10px] text-[#555] select-none z-20">
+        Drag to pan • Scroll to zoom
+      </span>
+      
+      {/* Legend - desktop only */}
       {showBubbles && (
-        <div className="absolute bottom-2 right-2 z-20 flex items-center gap-3 bg-[#1E222D]/90 px-3 py-1.5 rounded text-[10px]">
+        <div className="absolute bottom-14 md:bottom-2 right-2 z-20 hidden md:flex items-center gap-3 bg-[#1E222D]/90 px-3 py-1.5 rounded text-[10px]">
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-full border border-white bg-transparent" />
             <span className="text-[#D1D4DC]">Single tweet</span>
@@ -1024,6 +1055,14 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
           <div className="mt-2 text-xs" style={{ color: asset.color }}>Click bubble to view tweet →</div>
         </div>
       )}
+      
+      {/* Mobile bottom sheet for tweet details */}
+      <TweetBottomSheet
+        tweet={selectedTweet}
+        asset={asset}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </div>
   );
 }

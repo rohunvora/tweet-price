@@ -62,3 +62,14 @@ body {
 .asset-accent:hover {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--asset-color, #2962FF) 30%, transparent);
 }
+
+/* Safe area for notched devices */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Touch-friendly tap target */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
