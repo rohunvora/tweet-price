@@ -13,8 +13,6 @@ import {
 import { Timeframe, TweetEvent, Candle, Asset } from '@/lib/types';
 import { loadPrices, toCandlestickData, getSortedTweetTimestamps } from '@/lib/dataLoader';
 import { formatTimeGap, formatPctChange } from '@/lib/formatters';
-import { useMobile } from '@/lib/useMobile';
-import { TweetBottomSheet } from './TweetBottomSheet';
 
 // =============================================================================
 // Constants
@@ -128,14 +126,6 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   const [availableTimeframes, setAvailableTimeframes] = useState<Set<Timeframe>>(new Set(['1d']));
   const [noData, setNoData] = useState(false);
   const [containerWidth, setContainerWidth] = useState(800);
-  
-  // NEW: Mobile-only state (additive)
-  const [selectedTweet, setSelectedTweet] = useState<TweetEvent | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  
-  // Mobile detection for behavior changes
-  const isMobile = useMobile();
-  const isMobileRef = useRef(false);
 
   // ---------------------------------------------------------------------------
   // Sync refs with state/props
@@ -144,7 +134,6 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   useEffect(() => { showBubblesRef.current = showBubbles; }, [showBubbles]);
   useEffect(() => { hoveredTweetRef.current = hoveredTweet; }, [hoveredTweet]);
   useEffect(() => { assetRef.current = asset; }, [asset]);
-  useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
   useEffect(() => {
     sortedTweetTimestampsRef.current = getSortedTweetTimestamps(tweetEvents);
   }, [tweetEvents]);
@@ -647,7 +636,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       setHoveredTweet(null);
     });
 
-    // Click handler for clusters
+    // Click handler for clusters - unified behavior for all platforms
     chart.subscribeClick((param: MouseEventParams) => {
       if (!param.point) return;
 
@@ -656,22 +645,21 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
 
       for (const cluster of clustersRef.current) {
         if (Math.hypot(cluster.x - x, cluster.y - y) < CLICK_RADIUS) {
-          // NEW: Mobile branch - open bottom sheet
-          if (isMobileRef.current) {
-            setSelectedTweet(cluster.tweets[0]);
-            setSheetOpen(true);
-            return;
-          }
-          
-          // EXISTING: Desktop branch (unchanged)
           if (cluster.tweets.length > 1) {
-            // Multi-tweet cluster: zoom in
+            // Multi-tweet cluster: zoom in to show individual tweets
             zoomToClusterRef.current?.(cluster);
+          } else {
+            // Single tweet: show tooltip (useful for mobile where hover doesn't work)
+            const tweet = cluster.tweets[0];
+            setHoveredTweet(tweet);
+            setTooltipPos({ x: cluster.x, y: cluster.y });
           }
-          // Single tweet: do nothing (hover tooltip is sufficient)
           return;
         }
       }
+      
+      // Tap outside bubbles dismisses tooltip
+      setHoveredTweet(null);
     });
 
     return () => {
@@ -1049,17 +1037,9 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
               )}
             </div>
           )}
-          <div className="mt-2 text-xs" style={{ color: asset.color }}>Click bubble to view tweet →</div>
+          <div className="mt-2 text-xs" style={{ color: asset.color }}>Tap to dismiss</div>
         </div>
       )}
-      
-      {/* Mobile bottom sheet for tweet details */}
-      <TweetBottomSheet
-        tweet={selectedTweet}
-        asset={asset}
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-      />
     </div>
   );
 }

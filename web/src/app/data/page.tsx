@@ -1,13 +1,12 @@
 'use client';
 
-import { Suspense, useEffect, useState, useCallback, useMemo } from 'react';
+import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { loadTweetEvents, loadAssets } from '@/lib/dataLoader';
 import { TweetEvent, Asset } from '@/lib/types';
 import DataTable from '@/components/DataTable';
 import AssetSelector from '@/components/AssetSelector';
-import { TweetCard } from '@/components/TweetCard';
 
 /**
  * Avatar component with fallback to colored circle
@@ -63,17 +62,9 @@ function DataPageContent() {
   const [tweetEvents, setTweetEvents] = useState<TweetEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchFilter, setSearchFilter] = useState('');
 
   // Get asset ID from URL, default to 'pump'
   const assetId = searchParams.get('asset') || 'pump';
-  
-  // Filter events for mobile card view
-  const filteredEvents = useMemo(() => {
-    if (!searchFilter) return tweetEvents;
-    const lower = searchFilter.toLowerCase();
-    return tweetEvents.filter(e => e.text.toLowerCase().includes(lower));
-  }, [tweetEvents, searchFilter]);
 
   useEffect(() => {
     async function init() {
@@ -203,40 +194,13 @@ function DataPageContent() {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 max-w-7xl mx-auto w-full">
-        {/* Mobile: Card view */}
-        <div className="md:hidden px-4 py-4">
-          {/* Search */}
-          <input
-            type="text"
-            placeholder="Search tweets..."
-            value={searchFilter}
-            onChange={e => setSearchFilter(e.target.value)}
-            className="w-full px-4 py-3 mb-4 bg-[#0D1117] border border-[#30363D] rounded-xl text-[#C9D1D9] placeholder-[#6E7681] focus:outline-none focus:border-[#58A6FF]"
-          />
-          
-          {/* Cards */}
-          <div className="pb-safe">
-            {filteredEvents.map(event => (
-              <TweetCard key={event.tweet_id} event={event} founder={selectedAsset.founder} />
-            ))}
-          </div>
-          
-          {/* Count */}
-          <div className="text-center text-sm text-[#6E7681] py-4">
-            {filteredEvents.length} tweets
-          </div>
-        </div>
-        
-        {/* Desktop: Table view */}
-        <div className="hidden md:block px-4 py-6">
-          <DataTable events={tweetEvents} founder={selectedAsset.founder} assetName={selectedAsset.name} />
-        </div>
+      {/* Main content - same table on all screen sizes */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-4 md:py-6">
+        <DataTable events={tweetEvents} founder={selectedAsset.founder} assetName={selectedAsset.name} />
       </main>
 
-      {/* Footer - desktop only */}
-      <footer className="hidden md:block border-t border-[#30363D] bg-[#161B22] py-4">
+      {/* Footer */}
+      <footer className="border-t border-[#30363D] bg-[#161B22] py-4 pb-safe">
         <div className="max-w-7xl mx-auto px-4 text-center text-sm text-[#6E7681]">
           <p>
             Built with data from X API & GeckoTerminal. Not financial advice.

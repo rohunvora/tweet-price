@@ -153,7 +153,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
       enableSorting: false,
     }),
     
-    // Price column
+    // Price column - hidden on mobile (% changes are more important)
     columnHelper.accessor('price_at_tweet', {
       header: 'Price',
       cell: info => {
@@ -167,6 +167,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
         );
       },
       sortingFn: 'basic',
+      meta: { hideOnMobile: true },
     }),
     
     // % 1h column - simple colored text
@@ -250,13 +251,17 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
       </div>
 
       {/* Table with horizontal scroll for mobile */}
-      <div className="flex-1 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <table className="w-full min-w-[500px]">
+      <div className="flex-1 overflow-x-auto overflow-y-auto relative" style={{ WebkitOverflowScrolling: 'touch' }}>
+        {/* Scroll indicator fade on right edge */}
+        <div className="absolute right-0 top-0 bottom-0 w-8 pointer-events-none bg-gradient-to-l from-[#0D1117] to-transparent z-20 md:hidden" />
+        
+        <table className="w-full min-w-[480px]">
           <thead className="sticky top-0 bg-[#161B22] z-10">
             {table.getHeaderGroups().map(headerGroup => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map(header => {
+                {headerGroup.headers.map((header, idx) => {
                   const hideOnMobile = (header.column.columnDef.meta as { hideOnMobile?: boolean })?.hideOnMobile;
+                  const isFirstCol = idx === 0;
                   return (
                     <th
                       key={header.id}
@@ -265,7 +270,9 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
                         header.column.getCanSort() 
                           ? 'cursor-pointer hover:text-[#C9D1D9] hover:bg-[#21262D] active:bg-[#30363D]' 
                           : ''
-                      } ${hideOnMobile ? 'hidden sm:table-cell' : ''}`}
+                      } ${hideOnMobile ? 'hidden sm:table-cell' : ''} ${
+                        isFirstCol ? 'sticky left-0 bg-[#161B22] z-20 md:static' : ''
+                      }`}
                     >
                       <div className="flex items-center gap-1">
                         {flexRender(header.column.columnDef.header, header.getContext())}
@@ -284,12 +291,15 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
           <tbody className="divide-y divide-[#21262D]">
             {table.getRowModel().rows.map(row => (
               <tr key={row.id} className="hover:bg-[#161B22]">
-                {row.getVisibleCells().map(cell => {
+                {row.getVisibleCells().map((cell, idx) => {
                   const hideOnMobile = (cell.column.columnDef.meta as { hideOnMobile?: boolean })?.hideOnMobile;
+                  const isFirstCol = idx === 0;
                   return (
                     <td 
                       key={cell.id} 
-                      className={`px-3 py-3 ${hideOnMobile ? 'hidden sm:table-cell' : ''}`}
+                      className={`px-3 py-3 ${hideOnMobile ? 'hidden sm:table-cell' : ''} ${
+                        isFirstCol ? 'sticky left-0 bg-[#0D1117] md:static' : ''
+                      }`}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
