@@ -29,11 +29,11 @@ const COLORS = {
   gridLines: '#1E222D',
   border: '#2A2E39',
   crosshair: '#758696',
-  // Candlestick colors (muted to not compete with markers)
-  candleUp: 'rgba(38, 166, 154, 0.3)',
-  candleDown: 'rgba(239, 83, 80, 0.3)',
-  candleBorderUp: 'rgba(38, 166, 154, 0.4)',
-  candleBorderDown: 'rgba(239, 83, 80, 0.4)',
+  // Candlestick colors (slightly muted to not compete with markers)
+  candleUp: 'rgba(38, 166, 154, 0.6)',
+  candleDown: 'rgba(239, 83, 80, 0.6)',
+  candleBorderUp: 'rgba(38, 166, 154, 0.8)',
+  candleBorderDown: 'rgba(239, 83, 80, 0.8)',
   // Marker colors
   markerPrimary: '#2962FF',
   markerHoverGlow: 'rgba(41, 98, 255, 0.3)',
@@ -43,9 +43,8 @@ const COLORS = {
   negative: '#EF5350',
 } as const;
 
-/** Available timeframe options */
+/** Available timeframe options (1m removed - too much data, rarely useful) */
 const TIMEFRAMES: { label: string; value: Timeframe }[] = [
-  { label: '1m', value: '1m' },
   { label: '15m', value: '15m' },
   { label: '1h', value: '1h' },
   { label: '1D', value: '1d' },
@@ -798,7 +797,11 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
           // This allows us to preserve position on manual timeframe switch
           const previousRange = chartRef.current.timeScale().getVisibleRange();
 
-          seriesRef.current.setData(toCandlestickData(priceData) as CandlestickData<Time>[]);
+          const chartData = toCandlestickData(priceData);
+          console.log(`[Chart] Setting ${chartData.length} candles for ${asset.id} @ ${timeframe}`);
+          console.log(`[Chart] First candle:`, chartData[0]);
+          console.log(`[Chart] Last candle:`, chartData[chartData.length - 1]);
+          seriesRef.current.setData(chartData as CandlestickData<Time>[]);
 
           if (pendingZoomRef.current) {
             // Cluster click: animate to the pending zoom target
