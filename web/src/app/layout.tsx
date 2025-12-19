@@ -2,17 +2,17 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Does Alon Tweet = $PUMP Pump?",
-  description: "Analyzing the correlation between @a1lon9's tweets and $PUMP token price. See the data for yourself.",
+  title: "Tweet-Price Correlation Analyzer",
+  description: "Do founder tweets correlate with token price? Analyze the relationship between crypto project founders' tweets and their token's price action across multiple assets.",
   openGraph: {
-    title: "Does Alon Tweet = $PUMP Pump?",
-    description: "When Alon tweets, $PUMP averages +1.26%. When silent, -1.46%. See the data.",
+    title: "Tweet-Price Correlation Analyzer",
+    description: "Do founder tweets correlate with token price? Interactive charts and statistical analysis for PUMP, JUP, HYPE, ASTER, and more.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Does Alon Tweet = $PUMP Pump?",
-    description: "When Alon tweets, $PUMP averages +1.26%. When silent, -1.46%. See the data.",
+    title: "Tweet-Price Correlation Analyzer",
+    description: "Do founder tweets correlate with token price? Interactive charts and statistical analysis for PUMP, JUP, HYPE, ASTER, and more.",
   },
 };
 
