@@ -251,8 +251,6 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       .filter(t => t.price_at_tweet && t.timestamp >= rangeFrom && t.timestamp <= rangeTo)
       .sort((a, b) => a.timestamp - b.timestamp);
 
-    console.log('[Chart] drawMarkers called, visibleTweets:', visibleTweets.length, 'range:', rangeFrom, '-', rangeTo);
-
     if (visibleTweets.length === 0) return;
 
     // -------------------------------------------------------------------------
@@ -322,18 +320,6 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       if (prev.avgPrice > 0) {
         curr.pctSincePrev = ((curr.avgPrice - prev.avgPrice) / prev.avgPrice) * 100;
       }
-    }
-
-    // Debug: log gap info
-    console.log('[Chart] clusters built:', clusters.length);
-    if (clusters.length > 1) {
-      const gaps = clusters.slice(1).map((c) => ({
-        gap: c.timeSincePrev,
-        gapHours: c.timeSincePrev ? (c.timeSincePrev / 3600).toFixed(1) : 0,
-        threshold: SILENCE_GAP_THRESHOLD / 3600,
-        meetsThreshold: c.timeSincePrev && c.timeSincePrev > SILENCE_GAP_THRESHOLD
-      }));
-      console.log('[Chart] Gap analysis:', gaps);
     }
 
     // -------------------------------------------------------------------------
