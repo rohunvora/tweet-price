@@ -794,24 +794,63 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         candleTimesRef.current = priceData.candles.map(c => c.t);
 
         if (seriesRef.current && chartRef.current) {
+          // Capture current visible range BEFORE setting new data
+          // This allows us to preserve position on manual timeframe switch
+          const previousRange = chartRef.current.timeScale().getVisibleRange();
+
           seriesRef.current.setData(toCandlestickData(priceData) as CandlestickData<Time>[]);
 
-          // Apply pending zoom if set (from cluster click), otherwise fitContent
           if (pendingZoomRef.current) {
-            // Don't fitContent - we have a specific range to show
+            // Cluster click: animate to the pending zoom target
             const { from, to } = pendingZoomRef.current;
             pendingZoomRef.current = null;
-            chartRef.current.timeScale().setVisibleRange({ 
-              from: from as Time, 
-              to: to as Time 
+
+            // Use requestAnimationFrame to let chart settle after setData
+            requestAnimationFrame(() => {
+              if (previousRange && animateToRangeRef.current) {
+                // Animate smoothly from previous position to target
+                animateToRangeRef.current(from, to);
+              } else {
+                // No previous position, set directly
+                chartRef.current?.timeScale().setVisibleRange({
+                  from: from as Time,
+                  to: to as Time
+                });
+              }
+            });
+          } else if (previousRange) {
+            // Manual timeframe switch: preserve center position (TradingView pattern)
+            // Stay looking at the same time region, just with different candle resolution
+            const prevCenter = ((previousRange.from as number) + (previousRange.to as number)) / 2;
+            const prevSpan = (previousRange.to as number) - (previousRange.from as number);
+            const newFrom = prevCenter - prevSpan / 2;
+            const newTo = prevCenter + prevSpan / 2;
+            chartRef.current.timeScale().setVisibleRange({
+              from: newFrom as Time,
+              to: newTo as Time
             });
           } else {
-            // Default: fitContent() auto-scales both axes to show all data
-            chartRef.current.timeScale().fitContent();
+            // Initial load: smart default view
+            // When fitContent() squeezes too many candles, they become invisible
+            const candles = priceData.candles;
+            const MAX_VISIBLE_CANDLES = 500;
+
+            if (candles.length > MAX_VISIBLE_CANDLES) {
+              // Show last N candles to ensure visibility
+              const fromCandle = candles[candles.length - MAX_VISIBLE_CANDLES];
+              const toCandle = candles[candles.length - 1];
+              const padding = (toCandle.t - fromCandle.t) * 0.05;
+              chartRef.current.timeScale().setVisibleRange({
+                from: fromCandle.t as Time,
+                to: (toCandle.t + padding) as Time,
+              });
+            } else {
+              chartRef.current.timeScale().fitContent();
+            }
           }
 
           setDataLoaded(true);
-          
+
           // Trigger bubble entrance animation
           bubbleAnimRef.current = { start: performance.now(), active: true };
         }
@@ -854,7 +893,22 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   }, [tweetEvents]);
 
   const jumpToAllTime = useCallback(() => {
-    chartRef.current?.timeScale().fitContent();
+    const chart = chartRef.current;
+    const candles = candlesRef.current;
+    if (!chart || candles.length === 0) return;
+
+    // For large datasets, set a reasonable max visible range
+    // to keep candles visible (about 2000 candles max)
+    const MAX_ALL_TIME_CANDLES = 2000;
+
+    if (candles.length > MAX_ALL_TIME_CANDLES) {
+      // Show all data but with minimum bar spacing enforced
+      // This shows the full range but may not show every candle
+      chart.applyOptions({
+        timeScale: { minBarSpacing: 1 }
+      });
+    }
+    chart.timeScale().fitContent();
   }, []);
 
   // ---------------------------------------------------------------------------
