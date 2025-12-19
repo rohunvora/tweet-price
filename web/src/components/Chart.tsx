@@ -18,6 +18,9 @@ import { formatTimeGap, formatPctChange } from '@/lib/formatters';
 // Constants
 // =============================================================================
 
+/** Silence gap threshold: only show line if gap exceeds 24 hours */
+const SILENCE_GAP_THRESHOLD = 24 * 60 * 60; // 24 hours in seconds
+
 /** Chart theme colors (TradingView dark theme inspired) */
 const COLORS = {
   background: '#131722',
@@ -40,29 +43,6 @@ const COLORS = {
   negative: '#EF5350',
 } as const;
 
-/** 
- * Get visual thresholds based on container dimensions.
- * These control when markers stack (overlap) and when lines are drawn.
- */
-function getVisualThresholds(containerWidth: number, containerHeight: number) {
-  const isMobile = containerWidth < 768;
-  const isSmallHeight = containerHeight < 500;
-  
-  return {
-    // X overlap: based on marker size + buffer (pixels)
-    OVERLAP_X: isMobile ? 45 : 35,
-    // Y overlap: more generous because price axis is compressed
-    OVERLAP_Y: isSmallHeight ? 50 : 40,
-    // Minimum line length to render (Euclidean distance in pixels)
-    MIN_LINE_PIXELS: isMobile ? 25 : 20,
-    // Minimum line length to show labels on (need space for text)
-    MIN_LABEL_PIXELS: 60,
-    // Marker sizes
-    MARKER_SIZE: isMobile ? 32 : 40,
-    LABEL_FONT_SIZE: isMobile ? 10 : 12,
-  };
-}
-
 /** Available timeframe options */
 const TIMEFRAMES: { label: string; value: Timeframe }[] = [
   { label: '1m', value: '1m' },
@@ -80,35 +60,21 @@ interface ChartProps {
   asset: Asset;
 }
 
-/** Internal representation of a tweet marker for rendering */
-interface TweetMarker {
+/** Internal representation of a tweet cluster for rendering */
+interface TweetClusterDisplay {
   tweets: TweetEvent[];
-  firstTweet: TweetEvent;    // Position marker here (where activity started)
-  lastTweet: TweetEvent;     // For outgoing line calculations
-  x: number;                 // Screen X from firstTweet.timestamp
-  y: number;                 // Screen Y from firstTweet.price_at_tweet
-  count: number;
+  x: number;           // Screen X (avg position for visual centering)
+  y: number;           // Screen Y (avg position for visual centering)
+  avgPrice: number;
+  avgTimestamp: number;
+  avgChange: number | null;
+  // Actual tweet boundaries for zoom-independent statistics
+  firstTweet: TweetEvent;
+  lastTweet: TweetEvent;
+  timeSincePrev: number | null;
+  pctSincePrev: number | null;
 }
 
-/** Check if a new tweet position should stack with existing marker */
-function shouldStack(
-  newPos: { x: number; y: number },
-  existingMarker: TweetMarker,
-  thresholds: ReturnType<typeof getVisualThresholds>
-): boolean {
-  const xDist = Math.abs(newPos.x - existingMarker.x);
-  const yDist = Math.abs(newPos.y - existingMarker.y);
-  
-  // Stack only if close in BOTH dimensions
-  // This prevents clustering tweets during pumps (close in time, far in price)
-  return xDist < thresholds.OVERLAP_X && yDist < thresholds.OVERLAP_Y;
-}
-
-/** Calculate percentage change between two prices */
-function calcPctChange(fromPrice: number | null, toPrice: number | null): number | null {
-  if (!fromPrice || !toPrice || fromPrice <= 0) return null;
-  return ((toPrice - fromPrice) / fromPrice) * 100;
-}
 
 // =============================================================================
 // Component
@@ -145,10 +111,10 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   const assetRef = useRef(asset);
   
   // Cluster zoom refs
-  const clustersRef = useRef<TweetMarker[]>([]);
+  const clustersRef = useRef<TweetClusterDisplay[]>([]);
   const pendingZoomRef = useRef<{from: number, to: number} | null>(null);
   const bubbleAnimRef = useRef<{start: number, active: boolean}>({start: 0, active: false});
-  const zoomToClusterRef = useRef<((cluster: TweetMarker) => void) | null>(null);
+  const zoomToClusterRef = useRef<((cluster: TweetClusterDisplay) => void) | null>(null);
   const animateToRangeRef = useRef<((from: number, to: number) => void) | null>(null);
 
   // ---------------------------------------------------------------------------
@@ -225,7 +191,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   }, [asset.founder]);
 
   // ---------------------------------------------------------------------------
-  // Draw markers (X+Y clustering + gap lines based on visual distance)
+  // Draw markers (X-only clustering + 24h gap threshold for lines)
   // ---------------------------------------------------------------------------
   const drawMarkers = useCallback(() => {
     const chart = chartRef.current;
@@ -266,8 +232,9 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     const rangeTo = visibleRange.to as number;
     const visibleSeconds = rangeTo - rangeFrom;
     
-    // Get responsive thresholds
-    const thresholds = getVisualThresholds(width, height);
+    // Responsive clustering threshold (pixels on X-axis)
+    const isMobile = width < 768;
+    const clusterThreshold = isMobile ? 45 : 35;
     
     // Adaptive sizing: smaller markers when zoomed out, larger when zoomed in
     // zoomFactor: 1.0 at 7 days visible, 0.4 at very zoomed out
@@ -291,55 +258,115 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     }
 
     // -------------------------------------------------------------------------
-    // Build markers with X+Y clustering (preserves price story)
+    // Build clusters with X-only clustering + average positioning
     // -------------------------------------------------------------------------
-    const markers: TweetMarker[] = [];
+    const clusters: TweetClusterDisplay[] = [];
+    
+    // Helper to emit a completed cluster
+    const emitCluster = (
+      tweets: TweetEvent[], 
+      clusterX: number, 
+      sumPrice: number, 
+      sumTimestamp: number, 
+      sumChange: number, 
+      changeCount: number
+    ) => {
+      const avgPrice = sumPrice / tweets.length;
+      const avgTimestamp = sumTimestamp / tweets.length;
+      const avgChange = changeCount > 0 ? sumChange / changeCount : null;
+      
+      // Get screen Y from average price
+      const y = series.priceToCoordinate(avgPrice);
+      if (y === null) return;
+      
+      clusters.push({
+        tweets: [...tweets],
+        x: clusterX,
+        y,
+        avgPrice,
+        avgTimestamp,
+        avgChange,
+        // tweets array is already sorted chronologically
+        firstTweet: tweets[0],
+        lastTweet: tweets[tweets.length - 1],
+        timeSincePrev: null,
+        pctSincePrev: null,
+      });
+    };
+
+    let currentTweets: TweetEvent[] = [];
+    let clusterX: number | null = null;
+    let sumPrice = 0;
+    let sumTimestamp = 0;
+    let sumChange = 0;
+    let changeCount = 0;
 
     for (const tweet of visibleTweets) {
       const nearestTime = findNearestCandleTime(tweet.timestamp);
       const x = nearestTime ? chart.timeScale().timeToCoordinate(nearestTime as Time) : null;
-      const y = tweet.price_at_tweet ? series.priceToCoordinate(tweet.price_at_tweet) : null;
-      if (x === null || y === null) continue;
+      if (x === null) continue;
 
-      const lastMarker = markers[markers.length - 1];
-      
-      if (lastMarker && shouldStack({ x, y }, lastMarker, thresholds)) {
-        // Stack: update lastTweet and count (marker stays at firstTweet position)
-        lastMarker.tweets.push(tweet);
-        lastMarker.lastTweet = tweet;
-        lastMarker.count++;
+      // X-only clustering: stack if within pixel threshold on time axis
+      if (clusterX !== null && Math.abs(x - clusterX) < clusterThreshold) {
+        // Add to existing cluster
+        currentTweets.push(tweet);
+        sumPrice += tweet.price_at_tweet!;
+        sumTimestamp += tweet.timestamp;
+        if (tweet.change_1h_pct !== null) {
+          sumChange += tweet.change_1h_pct;
+          changeCount++;
+        }
       } else {
-        // New marker at firstTweet position
-        markers.push({
-          tweets: [tweet],
-          firstTweet: tweet,
-          lastTweet: tweet,
-          x,
-          y,
-          count: 1,
-        });
+        // Emit previous cluster if exists
+        if (currentTweets.length > 0 && clusterX !== null) {
+          emitCluster(currentTweets, clusterX, sumPrice, sumTimestamp, sumChange, changeCount);
+        }
+        // Start new cluster
+        currentTweets = [tweet];
+        clusterX = x;
+        sumPrice = tweet.price_at_tweet!;
+        sumTimestamp = tweet.timestamp;
+        sumChange = tweet.change_1h_pct ?? 0;
+        changeCount = tweet.change_1h_pct !== null ? 1 : 0;
+      }
+    }
+    
+    // Emit final cluster
+    if (currentTweets.length > 0 && clusterX !== null) {
+      emitCluster(currentTweets, clusterX, sumPrice, sumTimestamp, sumChange, changeCount);
+    }
+
+    // Calculate time gaps and price changes between clusters
+    // Use actual tweet boundaries (not averages) for zoom-independent statistics
+    for (let i = 1; i < clusters.length; i++) {
+      const prev = clusters[i - 1];
+      const curr = clusters[i];
+      // Time gap: from last tweet of prev cluster to first tweet of current cluster
+      curr.timeSincePrev = curr.firstTweet.timestamp - prev.lastTweet.timestamp;
+      // Price change: during the actual silence period
+      const prevPrice = prev.lastTweet.price_at_tweet;
+      const currPrice = curr.firstTweet.price_at_tweet;
+      if (prevPrice && currPrice && prevPrice > 0) {
+        curr.pctSincePrev = ((currPrice - prevPrice) / prevPrice) * 100;
       }
     }
 
     // -------------------------------------------------------------------------
-    // Draw gap lines between consecutive markers (visual distance based)
-    // Lines render if there's pixel space - no arbitrary time threshold
+    // Draw gap lines between clusters (24h+ gaps only)
     // -------------------------------------------------------------------------
     ctx.setLineDash([6, 4]);
     ctx.lineWidth = 1.5;
     
-    for (let i = 1; i < markers.length; i++) {
-      const prev = markers[i - 1];
-      const curr = markers[i];
+    for (let i = 1; i < clusters.length; i++) {
+      const prev = clusters[i - 1];
+      const curr = clusters[i];
       
-      // Calculate visual distance (Euclidean, not just X)
-      const distance = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+      // Use pre-calculated gap from actual tweet boundaries
+      const gap = curr.timeSincePrev ?? 0;
       
-      // Only draw if there's enough visual space
-      if (distance > thresholds.MIN_LINE_PIXELS) {
-        // Calculate stats from actual tweet boundaries (zoom-independent)
-        const gap = curr.firstTweet.timestamp - prev.lastTweet.timestamp;
-        const pctChange = calcPctChange(prev.lastTweet.price_at_tweet, curr.firstTweet.price_at_tweet);
+      // Only draw line if gap exceeds 24h threshold
+      if (gap > SILENCE_GAP_THRESHOLD) {
+        const pctChange = curr.pctSincePrev;
         const isNegative = pctChange !== null && pctChange < 0;
         
         ctx.strokeStyle = isNegative ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)';
@@ -350,33 +377,34 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         const midX = (startX + endX) / 2;
         const midY = (prev.y + curr.y) / 2;
         
-        // Draw dashed line
-        ctx.beginPath();
-        ctx.moveTo(startX, prev.y);
-        ctx.lineTo(endX, curr.y);
-        ctx.stroke();
-        
-        // Draw labels only if line is long enough for readability
-        const lineLength = Math.hypot(endX - startX, curr.y - prev.y);
-        if (lineLength > thresholds.MIN_LABEL_PIXELS) {
-          ctx.setLineDash([]);
+        // Only draw if there's enough visual space for the line
+        if (endX > startX + 20) {
+          // Draw dashed line
+          ctx.beginPath();
+          ctx.moveTo(startX, prev.y);
+          ctx.lineTo(endX, curr.y);
+          ctx.stroke();
           
-          // Time gap label
-          if (gap > 60) { // Only show if > 1 minute
+          // Draw labels if line is long enough for readability
+          const lineLength = Math.hypot(endX - startX, curr.y - prev.y);
+          if (lineLength > 60) {
+            ctx.setLineDash([]);
+            
+            // Time gap label
             ctx.font = `${timeFontSize}px system-ui, sans-serif`;
             ctx.textAlign = 'center';
             ctx.fillStyle = COLORS.textMuted;
             ctx.fillText(formatTimeGap(gap), midX, midY - labelSpacing);
+            
+            // Percentage change label
+            if (pctChange !== null) {
+              ctx.font = `bold ${pctFontSize}px system-ui, sans-serif`;
+              ctx.fillStyle = isNegative ? COLORS.negative : COLORS.positive;
+              ctx.fillText(formatPctChange(pctChange), midX, midY + labelSpacing);
+            }
+            
+            ctx.setLineDash([6, 4]);
           }
-          
-          // Percentage change label
-          if (pctChange !== null) {
-            ctx.font = `bold ${pctFontSize}px system-ui, sans-serif`;
-            ctx.fillStyle = isNegative ? COLORS.negative : COLORS.positive;
-            ctx.fillText(formatPctChange(pctChange), midX, midY + labelSpacing);
-          }
-          
-          ctx.setLineDash([6, 4]);
         }
       }
     }
@@ -384,7 +412,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
 
     // -------------------------------------------------------------------------
     // Draw ongoing silence indicator (from TRUE last tweet to current price)
-    // Uses the actual chronological last tweet from ALL tweets, not just visible
+    // Only shows if silence exceeds 24h threshold
     // -------------------------------------------------------------------------
     const candles = candlesRef.current;
     
@@ -400,21 +428,20 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         const lastPrice = trueLastTweet.price_at_tweet!;
         const silenceDuration = latestCandle.t - trueLastTweet.timestamp;
         
-        // Get screen coordinates for last tweet
-        const lastTweetNearestTime = findNearestCandleTime(trueLastTweet.timestamp);
-        const lastX = lastTweetNearestTime 
-          ? chart.timeScale().timeToCoordinate(lastTweetNearestTime as Time) 
-          : null;
-        const lastY = series.priceToCoordinate(lastPrice);
-        
-        const latestX = chart.timeScale().timeToCoordinate(latestCandle.t as Time);
-        const latestY = series.priceToCoordinate(latestCandle.c);
-        
-        // Draw if we have valid coordinates and there's visual space
-        if (lastX !== null && lastY !== null && latestX !== null && latestY !== null) {
-          const distance = Math.hypot(latestX - lastX, latestY - lastY);
+        // Only show ongoing silence if it exceeds 24h threshold
+        if (silenceDuration > SILENCE_GAP_THRESHOLD) {
+          // Get screen coordinates for last tweet
+          const lastTweetNearestTime = findNearestCandleTime(trueLastTweet.timestamp);
+          const lastX = lastTweetNearestTime 
+            ? chart.timeScale().timeToCoordinate(lastTweetNearestTime as Time) 
+            : null;
+          const lastY = series.priceToCoordinate(lastPrice);
           
-          if (distance > thresholds.MIN_LINE_PIXELS && latestX > lastX + bubbleRadius) {
+          const latestX = chart.timeScale().timeToCoordinate(latestCandle.t as Time);
+          const latestY = series.priceToCoordinate(latestCandle.c);
+          
+          // Draw if we have valid coordinates and there's visual space
+          if (lastX !== null && lastY !== null && latestX !== null && latestY !== null && latestX > lastX + bubbleRadius) {
             const pctChange = ((latestCandle.c - lastPrice) / lastPrice) * 100;
             const isNegative = pctChange < 0;
             
@@ -430,7 +457,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
             
             // Draw labels if enough space
             const lineLength = Math.hypot(latestX - (lastX + bubbleRadius + 4), latestY - lastY);
-            if (lineLength > thresholds.MIN_LABEL_PIXELS) {
+            if (lineLength > 60) {
               const midX = (lastX + bubbleRadius + 4 + latestX) / 2;
               const midY = (lastY + latestY) / 2;
               
@@ -458,13 +485,14 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     }
 
     // -------------------------------------------------------------------------
-    // Draw markers with entrance animation
+    // Draw clusters with entrance animation
     // -------------------------------------------------------------------------
-    for (let i = 0; i < markers.length; i++) {
-      const marker = markers[i];
-      const { x, y, count } = marker;
+    for (let i = 0; i < clusters.length; i++) {
+      const cluster = clusters[i];
+      const { x, y, tweets } = cluster;
+      const count = tweets.length;
       const isMultiple = count > 1;
-      const isHovered = marker.tweets.some(t => hovered?.tweet_id === t.tweet_id);
+      const isHovered = tweets.some(t => hovered?.tweet_id === t.tweet_id);
 
       // Calculate entrance animation scale
       let scale = 1;
@@ -473,7 +501,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         const stagger = i * 30;
         const progress = Math.min(Math.max((elapsed - stagger) / 300, 0), 1);
         scale = progress < 1 ? 1 - (1 - progress) ** 3 : 1; // ease-out cubic
-        if (elapsed > 400 + markers.length * 30) {
+        if (elapsed > 400 + clusters.length * 30) {
           bubbleAnimRef.current.active = false;
         }
       }
@@ -545,8 +573,8 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       }
     }
 
-    // Store markers for click detection
-    clustersRef.current = markers;
+    // Store clusters for click detection
+    clustersRef.current = clusters;
 
     // Continue animation if active
     if (bubbleAnimRef.current.active) {
@@ -771,21 +799,24 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         if (seriesRef.current && chartRef.current) {
           seriesRef.current.setData(toCandlestickData(priceData) as CandlestickData<Time>[]);
 
-          // Official best practice: fitContent() auto-scales both axes
-          // This resets X-axis to show all data and triggers Y-axis auto-scale
-          chartRef.current.timeScale().fitContent();
+          // Apply pending zoom if set (from cluster click), otherwise fitContent
+          if (pendingZoomRef.current) {
+            // Don't fitContent - we have a specific range to show
+            const { from, to } = pendingZoomRef.current;
+            pendingZoomRef.current = null;
+            chartRef.current.timeScale().setVisibleRange({ 
+              from: from as Time, 
+              to: to as Time 
+            });
+          } else {
+            // Default: fitContent() auto-scales both axes to show all data
+            chartRef.current.timeScale().fitContent();
+          }
 
           setDataLoaded(true);
           
           // Trigger bubble entrance animation
           bubbleAnimRef.current = { start: performance.now(), active: true };
-          
-          // Apply pending zoom if set (from cluster click)
-          if (pendingZoomRef.current) {
-            const { from, to } = pendingZoomRef.current;
-            pendingZoomRef.current = null;
-            setTimeout(() => animateToRangeRef.current?.(from, to), 50);
-          }
         }
       } catch (error) {
         console.error(`[Chart] Failed to load price data:`, error);
@@ -859,7 +890,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   // Zoom to cluster (for multi-tweet bubbles)
   // Principle: Stay oriented. Zoom in place. Don't switch timeframes unless forced.
   // ---------------------------------------------------------------------------
-  const zoomToCluster = useCallback((cluster: TweetMarker) => {
+  const zoomToCluster = useCallback((cluster: TweetClusterDisplay) => {
     const chart = chartRef.current;
     if (!chart) return;
     
@@ -881,13 +912,20 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     const padding = Math.max(timeSpan * 0.5, 7200);
     const targetFrom = timeMin - padding;
     const targetTo = timeMax + padding;
+    const targetSpan = targetTo - targetFrom;
     
-    // Check if current timeframe has enough data in this range
-    const candlesInRange = candlesRef.current.filter(c => c.t >= targetFrom && c.t <= targetTo);
+    // Decide if we need a finer timeframe based on target time span
+    // - 1d: best for showing > 2 days (172800 seconds)
+    // - 1h: best for showing > 6 hours (21600 seconds)
+    // - 15m: best for showing > 2 hours (7200 seconds)
+    // - 1m: best for any shorter duration
+    const needsFinerTF = 
+      (timeframe === '1d' && targetSpan < 172800) ||  // < 2 days
+      (timeframe === '1h' && targetSpan < 21600) ||   // < 6 hours
+      (timeframe === '15m' && targetSpan < 7200);     // < 2 hours
     
-    if (candlesInRange.length < 3) {
-      // Not enough data - need finer timeframe
-      // Go one step at a time: 1d → 1h → 15m → 1m
+    if (needsFinerTF) {
+      // Switch to finer timeframe: 1d → 1h → 15m → 1m
       const order: Timeframe[] = ['1d', '1h', '15m', '1m'];
       const currentIdx = order.indexOf(timeframe);
       
@@ -906,7 +944,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       }
     }
     
-    // Enough data - just zoom, no timeframe change
+    // Current timeframe is fine - just zoom in place
     animateToRange(targetFrom, targetTo);
   }, [timeframe, availableTimeframes, animateToRange]);
 
