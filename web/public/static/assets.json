@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "generated_at": "2025-12-20T20:10:34.597918Z",
+  "generated_at": "2025-12-20T20:14:57.283919Z",
   "assets": [
     {
       "id": "pump",
@@ -72,6 +72,16 @@
       "launch_date": "2025-05-23T00:00:00Z",
       "color": "#FF4081",
       "logo": "/logos/useless.png",
+      "enabled": true
+    },
+    {
+      "id": "zora",
+      "name": "ZORA",
+      "founder": "js_horne",
+      "network": "ethereum",
+      "launch_date": "2025-04-23T00:00:00Z",
+      "color": "#5B5BD6",
+      "logo": "/logos/zora.png",
       "enabled": true
     }
   ]

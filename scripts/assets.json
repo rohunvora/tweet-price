@@ -125,6 +125,18 @@
       "launch_date": "2024-12-17T00:00:00Z",
       "color": "#5B9BD5",
       "enabled": false
+    },
+    {
+      "id": "zora",
+      "name": "ZORA",
+      "founder": "js_horne",
+      "network": "ethereum",
+      "coingecko_id": "zora",
+      "price_source": "coingecko",
+      "launch_date": "2025-04-23T00:00:00Z",
+      "color": "#5B5BD6",
+      "enabled": true,
+      "logo": "/logos/zora.png"
     }
   ]
 }
