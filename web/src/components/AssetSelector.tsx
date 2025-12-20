@@ -88,7 +88,7 @@ export default function AssetSelector({ assets, selectedAsset, onSelect }: Asset
       <button
         onClick={() => setIsOpen(!isOpen)}
         onKeyDown={handleKeyDown}
-        className="flex items-center gap-2 px-3 py-1.5 bg-[#2A2E39] hover:bg-[#363A45] rounded transition-colors"
+        className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-2)] hover:bg-[var(--surface-3)] rounded-lg transition-all interactive"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
@@ -96,18 +96,18 @@ export default function AssetSelector({ assets, selectedAsset, onSelect }: Asset
         <TokenLogo asset={selectedAsset} size={20} />
         
         {/* Asset name */}
-        <span className="text-[#D1D4DC] font-medium">${selectedAsset.name}</span>
+        <span className="text-[var(--text-primary)] font-medium">${selectedAsset.name}</span>
         
         {/* Network badge */}
         {selectedAsset.network && (
-          <span className="text-[10px] px-1.5 py-0.5 bg-[#1E222D] text-[#787B86] rounded uppercase">
+          <span className="text-[10px] px-1.5 py-0.5 bg-[var(--surface-0)] text-[var(--text-muted)] rounded uppercase font-medium">
             {selectedAsset.network}
           </span>
         )}
         
         {/* Dropdown arrow */}
         <svg
-          className={`w-4 h-4 text-[#787B86] transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-[var(--text-muted)] transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -119,17 +119,17 @@ export default function AssetSelector({ assets, selectedAsset, onSelect }: Asset
       {/* Dropdown menu */}
       {isOpen && (
         <div
-          className="absolute top-full left-0 mt-1 w-[calc(100vw-2rem)] md:w-64 max-w-xs bg-[#1E222D] border border-[#2A2E39] rounded-lg shadow-xl z-50 overflow-hidden"
+          className="absolute top-full left-0 mt-1 w-[calc(100vw-2rem)] md:w-72 max-w-xs bg-[var(--surface-1)] border border-[var(--border-default)] rounded-xl shadow-2xl z-50 overflow-hidden"
           role="listbox"
         >
           {assets.map(asset => (
             <button
               key={asset.id}
               onClick={() => handleSelect(asset)}
-              className={`w-full flex items-center gap-3 px-3 py-4 md:py-2.5 text-left transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-3 md:py-2.5 text-left transition-colors ${
                 asset.id === selectedAsset.id
-                  ? 'bg-[#2A2E39]'
-                  : 'hover:bg-[#252930]'
+                  ? 'bg-[var(--surface-2)]'
+                  : 'hover:bg-[var(--surface-2)]/50'
               }`}
               role="option"
               aria-selected={asset.id === selectedAsset.id}
@@ -140,21 +140,21 @@ export default function AssetSelector({ assets, selectedAsset, onSelect }: Asset
               {/* Asset info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-[#D1D4DC] font-medium">${asset.name}</span>
+                  <span className="text-[var(--text-primary)] font-medium">${asset.name}</span>
                   {asset.network && (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-[#131722] text-[#787B86] rounded uppercase">
+                    <span className="text-[10px] px-1.5 py-0.5 bg-[var(--surface-0)] text-[var(--text-muted)] rounded uppercase font-medium">
                       {asset.network}
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-[#787B86]">
+                <div className="text-xs text-[var(--text-muted)]">
                   @{asset.founder}
                 </div>
               </div>
               
               {/* Checkmark for selected */}
               {asset.id === selectedAsset.id && (
-                <svg className="w-4 h-4 text-[#2962FF]" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-4 h-4 text-[var(--accent)]" fill="currentColor" viewBox="0 0 20 20">
                   <path
                     fillRule="evenodd"
                     d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -169,5 +169,3 @@ export default function AssetSelector({ assets, selectedAsset, onSelect }: Asset
     </div>
   );
 }
-
-

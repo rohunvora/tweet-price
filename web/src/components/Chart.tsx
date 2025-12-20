@@ -73,33 +73,37 @@ import { formatTimeGap, formatPctChange } from '@/lib/formatters';
 const SILENCE_GAP_THRESHOLD = 24 * 60 * 60; // 24 hours in seconds
 
 /**
- * Chart theme colors - TradingView dark theme inspired.
+ * Chart theme colors - Premium dark theme
+ * Derived from reference designs (Crypto Dashboard, Parlay Banditz)
  * Candlestick colors are intentionally muted (60-80% opacity) so tweet
  * markers stand out as the primary visual element.
  */
 const COLORS = {
-  // Base theme
-  background: '#131722',
-  text: '#D1D4DC',
-  textMuted: '#787B86',
-  gridLines: '#1E222D',
-  border: '#2A2E39',
-  crosshair: '#758696',
+  // Base theme - near-black with subtle elevation
+  background: '#09090B',      // Surface-0: Page background
+  surface1: '#0F0F12',        // Card background
+  surface2: '#161619',        // Elevated elements
+  text: '#FAFAFA',            // Primary text
+  textMuted: '#71717A',       // Muted/tertiary text
+  textSecondary: '#A1A1AA',   // Secondary text
+  gridLines: '#161619',       // Subtle grid
+  border: 'rgba(255, 255, 255, 0.08)', // Near-invisible borders
+  crosshair: '#52525B',
 
   // Candlestick colors (muted to not compete with markers)
-  candleUp: 'rgba(38, 166, 154, 0.6)',      // Green, 60% opacity
-  candleDown: 'rgba(239, 83, 80, 0.6)',     // Red, 60% opacity
-  candleBorderUp: 'rgba(38, 166, 154, 0.8)',
-  candleBorderDown: 'rgba(239, 83, 80, 0.8)',
+  candleUp: 'rgba(34, 197, 94, 0.6)',      // Green, 60% opacity
+  candleDown: 'rgba(239, 68, 68, 0.6)',    // Red, 60% opacity
+  candleBorderUp: 'rgba(34, 197, 94, 0.8)',
+  candleBorderDown: 'rgba(239, 68, 68, 0.8)',
 
   // Default marker colors (overridden by asset.color)
-  markerPrimary: '#2962FF',
-  markerHoverGlow: 'rgba(41, 98, 255, 0.3)',    // 30% opacity for hover
-  markerMultipleGlow: 'rgba(41, 98, 255, 0.4)', // 40% opacity for multi-tweet
+  markerPrimary: '#3B82F6',   // Accent blue
+  markerHoverGlow: 'rgba(59, 130, 246, 0.3)',    // 30% opacity for hover
+  markerMultipleGlow: 'rgba(59, 130, 246, 0.4)', // 40% opacity for multi-tweet
 
-  // Price change indicator colors (same as TradingView)
-  positive: '#26A69A',  // Teal green
-  negative: '#EF5350',  // Coral red
+  // Price change indicator colors (matching design tokens)
+  positive: '#22C55E',  // Vibrant green
+  negative: '#EF4444',  // Vibrant red
 } as const;
 
 /**

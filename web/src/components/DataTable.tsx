@@ -66,25 +66,25 @@ function TweetDayStats({ events }: { events: TweetEvent[] }) {
   const isPositive = stats.avgReturn >= 0;
   
   return (
-    <div className="flex flex-wrap gap-3 p-4 border-b border-[#30363D]">
-      <div className="flex items-center gap-4 px-4 py-3 bg-[#161B22] rounded-lg border border-[#30363D]">
+    <div className="flex flex-wrap gap-3 p-4 border-b border-[var(--border-subtle)]">
+      <div className="flex items-center gap-4 px-5 py-4 bg-[var(--surface-1)] rounded-xl border border-[var(--border-subtle)]">
         <div>
-          <div className="text-xs text-[#8B949E] uppercase tracking-wide mb-1">Tweet Days</div>
+          <div className="stat-label mb-1">Tweet Days</div>
           <div className="flex items-baseline gap-3">
-            <span className={`text-xl font-mono font-semibold ${isPositive ? 'text-[#3FB950]' : 'text-[#F85149]'}`}>
+            <span className={`text-2xl font-bold tabular-nums ${isPositive ? 'text-[var(--positive)]' : 'text-[var(--negative)]'}`}>
               {isPositive ? '+' : ''}{stats.avgReturn}%
             </span>
-            <span className="text-sm text-[#8B949E]">avg</span>
+            <span className="text-sm text-[var(--text-secondary)]">avg</span>
           </div>
         </div>
-        <div className="w-px h-10 bg-[#30363D]" />
+        <div className="w-px h-12 bg-[var(--border-subtle)]" />
         <div>
-          <div className="text-xs text-[#8B949E] uppercase tracking-wide mb-1">Win Rate</div>
+          <div className="stat-label mb-1">Win Rate</div>
           <div className="flex items-baseline gap-2">
-            <span className="text-xl font-mono font-semibold text-[#C9D1D9]">
+            <span className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">
               {stats.winRate}%
             </span>
-            <span className="text-xs text-[#6E7681]">({stats.count} tweets)</span>
+            <span className="text-xs text-[var(--text-muted)]">({stats.count} tweets)</span>
           </div>
         </div>
       </div>
@@ -117,7 +117,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
         });
         return (
           <span 
-            className="text-[#8B949E] whitespace-nowrap"
+            className="text-[var(--text-secondary)] whitespace-nowrap tabular-nums"
             title={`${dateStr} at ${timeStr}`}
           >
             {dateStr}
@@ -139,10 +139,10 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
             href={`https://twitter.com/${founder}/status/${row.tweet_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="block max-w-[250px] sm:max-w-[300px]"
+            className="block max-w-[250px] sm:max-w-[350px]"
           >
             <p 
-              className="text-sm text-[#C9D1D9] truncate hover:text-[#58A6FF] hover:underline transition-colors" 
+              className="text-sm text-[var(--text-primary)] truncate hover:text-[var(--accent)] transition-colors" 
               title={decodedText}
             >
               {decodedText}
@@ -159,11 +159,11 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
       cell: info => {
         const price = info.getValue();
         return price ? (
-          <span className="font-mono text-[#C9D1D9] text-sm">
+          <span className="font-mono text-[var(--text-primary)] text-sm tabular-nums">
             ${price.toFixed(6)}
           </span>
         ) : (
-          <span className="text-[#6E7681]">—</span>
+          <span className="text-[var(--text-disabled)]">—</span>
         );
       },
       sortingFn: 'basic',
@@ -175,10 +175,10 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
       header: '1H',
       cell: info => {
         const change = info.getValue();
-        if (change === null) return <span className="text-[#6E7681]">—</span>;
+        if (change === null) return <span className="text-[var(--text-disabled)]">—</span>;
         const isPositive = change >= 0;
         return (
-          <span className={`font-mono text-sm ${isPositive ? 'text-[#3FB950]' : 'text-[#F85149]'}`}>
+          <span className={`font-mono text-sm tabular-nums ${isPositive ? 'text-[var(--positive)]' : 'text-[var(--negative)]'}`}>
             {isPositive ? '+' : ''}{change.toFixed(1)}%
           </span>
         );
@@ -191,10 +191,10 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
       header: '24H',
       cell: info => {
         const change = info.getValue();
-        if (change === null) return <span className="text-[#6E7681]">—</span>;
+        if (change === null) return <span className="text-[var(--text-disabled)]">—</span>;
         const isPositive = change >= 0;
         return (
-          <span className={`font-mono text-sm font-semibold ${isPositive ? 'text-[#3FB950]' : 'text-[#F85149]'}`}>
+          <span className={`font-mono text-sm font-semibold tabular-nums ${isPositive ? 'text-[var(--positive)]' : 'text-[var(--negative)]'}`}>
             {isPositive ? '+' : ''}{change.toFixed(1)}%
           </span>
         );
@@ -206,7 +206,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
     columnHelper.accessor('likes', {
       header: '❤️',
       cell: info => (
-        <span className="text-[#8B949E] text-sm">
+        <span className="text-[var(--text-secondary)] text-sm tabular-nums">
           {info.getValue().toLocaleString()}
         </span>
       ),
@@ -229,22 +229,22 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
   });
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col bg-[var(--surface-1)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
       {/* Tweet Day Stats */}
       <TweetDayStats events={events} />
       
       {/* Search & Export */}
-      <div className="flex items-center gap-3 p-4 border-b border-[#30363D]">
+      <div className="flex items-center gap-3 p-4 border-b border-[var(--border-subtle)]">
         <input
           type="text"
           placeholder="Search tweets..."
           value={globalFilter}
           onChange={e => setGlobalFilter(e.target.value)}
-          className="flex-1 px-3 py-2 bg-[#0D1117] border border-[#30363D] rounded-lg text-[#C9D1D9] placeholder-[#6E7681] focus:outline-none focus:border-[#58A6FF] text-sm"
+          className="flex-1 px-3 py-2.5 bg-[var(--surface-0)] border border-[var(--border-default)] rounded-lg text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] text-sm transition-colors"
         />
         <button
           onClick={() => exportToCSV(events, founder, assetName)}
-          className="px-3 py-2 bg-[#21262D] text-[#C9D1D9] rounded-lg hover:bg-[#30363D] transition-colors text-sm whitespace-nowrap"
+          className="px-4 py-2.5 bg-[var(--surface-2)] text-[var(--text-primary)] rounded-lg hover:bg-[var(--surface-3)] transition-colors text-sm font-medium whitespace-nowrap interactive"
         >
           Export CSV
         </button>
@@ -253,10 +253,10 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
       {/* Table with horizontal scroll for mobile */}
       <div className="overflow-x-auto relative" style={{ WebkitOverflowScrolling: 'touch' }}>
         {/* Scroll indicator fade on right edge */}
-        <div className="absolute right-0 top-0 bottom-0 w-8 pointer-events-none bg-gradient-to-l from-[#0D1117] to-transparent z-20 md:hidden" />
+        <div className="absolute right-0 top-0 bottom-0 w-8 pointer-events-none bg-gradient-to-l from-[var(--surface-1)] to-transparent z-20 md:hidden" />
         
         <table className="w-full min-w-[480px]">
-          <thead className="sticky top-0 bg-[#161B22] z-10">
+          <thead className="sticky top-0 bg-[var(--surface-1)] z-10">
             {table.getHeaderGroups().map(headerGroup => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header, idx) => {
@@ -266,12 +266,12 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
                     <th
                       key={header.id}
                       onClick={header.column.getToggleSortingHandler()}
-                      className={`px-3 py-3 text-left text-xs font-medium text-[#8B949E] uppercase tracking-wider border-b border-[#30363D] select-none ${
+                      className={`px-4 py-3 text-left table-header border-b border-[var(--border-subtle)] select-none ${
                         header.column.getCanSort() 
-                          ? 'cursor-pointer hover:text-[#C9D1D9] hover:bg-[#21262D] active:bg-[#30363D]' 
+                          ? 'cursor-pointer hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] active:bg-[var(--surface-3)]' 
                           : ''
                       } ${hideOnMobile ? 'hidden sm:table-cell' : ''} ${
-                        isFirstCol ? 'sticky left-0 bg-[#161B22] z-20 md:static' : ''
+                        isFirstCol ? 'sticky left-0 bg-[var(--surface-1)] z-20 md:static' : ''
                       }`}
                     >
                       <div className="flex items-center gap-1">
@@ -288,17 +288,17 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
               </tr>
             ))}
           </thead>
-          <tbody className="divide-y divide-[#21262D]">
+          <tbody className="divide-y divide-[var(--border-subtle)]">
             {table.getRowModel().rows.map(row => (
-              <tr key={row.id} className="hover:bg-[#161B22]">
+              <tr key={row.id} className="table-row hover:bg-[var(--surface-2)]/50">
                 {row.getVisibleCells().map((cell, idx) => {
                   const hideOnMobile = (cell.column.columnDef.meta as { hideOnMobile?: boolean })?.hideOnMobile;
                   const isFirstCol = idx === 0;
                   return (
                     <td 
                       key={cell.id} 
-                      className={`px-3 py-3 ${hideOnMobile ? 'hidden sm:table-cell' : ''} ${
-                        isFirstCol ? 'sticky left-0 bg-[#0D1117] md:static' : ''
+                      className={`px-4 py-3 ${hideOnMobile ? 'hidden sm:table-cell' : ''} ${
+                        isFirstCol ? 'sticky left-0 bg-[var(--surface-1)] md:static' : ''
                       }`}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -312,12 +312,12 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
       </div>
 
       {/* Summary */}
-      <div className="p-4 border-t border-[#30363D] bg-[#161B22]">
-        <div className="flex items-center justify-between text-sm text-[#8B949E]">
-          <span>
+      <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--surface-1)]">
+        <div className="flex items-center justify-between text-sm text-[var(--text-secondary)]">
+          <span className="tabular-nums">
             Showing {table.getFilteredRowModel().rows.length} of {events.length} tweets
           </span>
-          <span className="hidden sm:inline">
+          <span className="hidden sm:inline tabular-nums">
             {events.filter(e => e.price_at_tweet !== null).length} with price data
           </span>
         </div>

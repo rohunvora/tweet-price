@@ -41,10 +41,10 @@ function FounderAvatar({ founder, color }: { founder: string; color: string }) {
  */
 function DataPageLoading() {
   return (
-    <div className="min-h-screen bg-[#0D1117] flex items-center justify-center">
+    <div className="min-h-screen bg-[var(--surface-0)] flex items-center justify-center">
       <div className="text-center">
-        <div className="animate-spin w-8 h-8 border-2 border-[#58A6FF] border-t-transparent rounded-full mx-auto mb-4"></div>
-        <p className="text-[#8B949E]">Loading...</p>
+        <div className="animate-spin w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full mx-auto mb-4"></div>
+        <p className="text-[var(--text-muted)]">Loading...</p>
       </div>
     </div>
   );
@@ -112,15 +112,15 @@ function DataPageContent() {
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-[#0D1117] flex items-center justify-center p-8">
-        <div className="max-w-lg w-full bg-red-900/30 border border-red-500/50 rounded-lg p-6">
-          <h2 className="text-red-400 font-bold text-lg mb-2">Data Error</h2>
-          <pre className="text-red-300 text-sm whitespace-pre-wrap font-mono">
+      <div className="min-h-screen bg-[var(--surface-0)] flex items-center justify-center p-8">
+        <div className="max-w-lg w-full bg-[var(--negative-muted)]/30 border border-[var(--negative)]/50 rounded-xl p-6">
+          <h2 className="text-[var(--negative)] font-bold text-lg mb-2">Data Error</h2>
+          <pre className="text-[var(--negative)]/80 text-sm whitespace-pre-wrap font-mono">
             {error}
           </pre>
           <Link 
             href="/data?asset=pump"
-            className="inline-block mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded transition-colors"
+            className="inline-block mt-4 px-4 py-2 bg-[var(--negative)]/20 hover:bg-[var(--negative)]/30 text-[var(--negative)] rounded-lg transition-colors interactive"
           >
             Go to PUMP
           </Link>
@@ -132,19 +132,19 @@ function DataPageContent() {
   // Loading state
   if (loading || !selectedAsset) {
     return (
-      <div className="min-h-screen bg-[#0D1117] flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--surface-0)] flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-[#58A6FF] border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-[#8B949E]">Loading {assetId}...</p>
+          <div className="animate-spin w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-[var(--text-muted)]">Loading {assetId}...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0D1117] flex flex-col">
+    <div className="min-h-screen bg-[var(--surface-0)] flex flex-col">
       {/* Header */}
-      <header className="border-b border-[#30363D] bg-[#161B22]">
+      <header className="border-b border-[var(--border-subtle)] bg-[var(--surface-1)]">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             {/* Left side */}
@@ -155,10 +155,10 @@ function DataPageContent() {
                 onSelect={handleAssetSelect}
               />
               <div className="hidden md:block">
-                <h1 className="text-xl font-bold text-[#C9D1D9]">
+                <h1 className="text-xl font-bold text-[var(--text-primary)]">
                   ${selectedAsset.name} Tweet Analysis
                 </h1>
-                <p className="text-sm text-[#8B949E] mt-1">
+                <p className="text-sm text-[var(--text-secondary)] mt-0.5">
                   Analyzing @{selectedAsset.founder}&apos;s tweets
                 </p>
               </div>
@@ -168,7 +168,7 @@ function DataPageContent() {
             <div className="hidden md:flex items-center gap-2">
               <Link 
                 href={`/chart?asset=${selectedAsset.id}`}
-                className="px-4 py-2 text-sm bg-[#21262D] text-[#8B949E] hover:bg-[#30363D] hover:text-[#C9D1D9] rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium bg-[var(--surface-2)] text-[var(--text-secondary)] hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] rounded-lg transition-colors interactive"
               >
                 View Chart
               </Link>
@@ -176,17 +176,17 @@ function DataPageContent() {
                 href={`https://twitter.com/${selectedAsset.founder}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-4 py-2 bg-[#21262D] hover:bg-[#30363D] rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-[var(--surface-2)] hover:bg-[var(--surface-3)] rounded-lg transition-colors interactive"
               >
                 <FounderAvatar founder={selectedAsset.founder} color={selectedAsset.color} />
-                <span className="text-[#C9D1D9]">@{selectedAsset.founder}</span>
+                <span className="text-[var(--text-primary)] text-sm font-medium">@{selectedAsset.founder}</span>
               </a>
             </div>
             
             {/* Mobile: Chart link */}
             <Link 
               href={`/chart?asset=${selectedAsset.id}`}
-              className="md:hidden text-sm text-[#58A6FF]"
+              className="md:hidden text-sm text-[var(--accent)] font-medium"
             >
               ← Back to Chart
             </Link>
@@ -200,8 +200,8 @@ function DataPageContent() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-[#30363D] bg-[#161B22] py-4 pb-safe">
-        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-[#6E7681]">
+      <footer className="border-t border-[var(--border-subtle)] bg-[var(--surface-1)] py-4 pb-safe">
+        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-[var(--text-muted)]">
           <p>
             Built with data from X API & GeckoTerminal. Not financial advice.
           </p>

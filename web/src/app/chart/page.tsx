@@ -11,8 +11,8 @@ import AssetSelector from '@/components/AssetSelector';
 const Chart = dynamic(() => import('@/components/Chart'), { 
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-full bg-[#131722]">
-      <div className="text-[#787B86]">Loading chart...</div>
+    <div className="flex items-center justify-center h-full bg-[var(--surface-0)]">
+      <div className="text-[var(--text-muted)]">Loading chart...</div>
     </div>
   ),
 });
@@ -69,10 +69,10 @@ function FounderAvatar({ founder, color }: { founder: string; color: string }) {
  */
 function ChartPageLoading() {
   return (
-    <div className="h-screen bg-[#131722] flex items-center justify-center">
+    <div className="h-screen bg-[var(--surface-0)] flex items-center justify-center">
       <div className="text-center">
-        <div className="animate-spin w-8 h-8 border-2 border-[#2962FF] border-t-transparent rounded-full mx-auto mb-4"></div>
-        <p className="text-[#787B86]">Loading...</p>
+        <div className="animate-spin w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full mx-auto mb-4"></div>
+        <p className="text-[var(--text-muted)]">Loading...</p>
       </div>
     </div>
   );
@@ -155,15 +155,15 @@ function ChartPageContent() {
   // Error state
   if (error) {
     return (
-      <div className="h-screen bg-[#131722] flex items-center justify-center p-8">
-        <div className="max-w-lg w-full bg-red-900/30 border border-red-500/50 rounded-lg p-6">
-          <h2 className="text-red-400 font-bold text-lg mb-2">Data Error</h2>
-          <pre className="text-red-300 text-sm whitespace-pre-wrap font-mono">
+      <div className="h-screen bg-[var(--surface-0)] flex items-center justify-center p-8">
+        <div className="max-w-lg w-full bg-[var(--negative-muted)]/30 border border-[var(--negative)]/50 rounded-xl p-6">
+          <h2 className="text-[var(--negative)] font-bold text-lg mb-2">Data Error</h2>
+          <pre className="text-[var(--negative)]/80 text-sm whitespace-pre-wrap font-mono">
             {error}
           </pre>
           <Link 
             href="/chart?asset=pump"
-            className="inline-block mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded transition-colors"
+            className="inline-block mt-4 px-4 py-2 bg-[var(--negative)]/20 hover:bg-[var(--negative)]/30 text-[var(--negative)] rounded-lg transition-colors interactive"
           >
             Go to PUMP
           </Link>
@@ -175,19 +175,19 @@ function ChartPageContent() {
   // Loading state
   if (loading || !selectedAsset) {
     return (
-      <div className="h-screen bg-[#131722] flex items-center justify-center">
+      <div className="h-screen bg-[var(--surface-0)] flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-[#2962FF] border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-[#787B86]">Loading {assetId}...</p>
+          <div className="animate-spin w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-[var(--text-muted)]">Loading {assetId}...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen bg-[#131722] flex flex-col">
+    <div className="h-screen bg-[var(--surface-0)] flex flex-col">
       {/* Top toolbar */}
-      <div className="h-14 md:h-10 bg-[#1E222D] border-b border-[#2A2E39] flex items-center px-3 md:px-2 gap-2">
+      <div className="h-14 md:h-11 bg-[var(--surface-1)] border-b border-[var(--border-subtle)] flex items-center px-3 md:px-3 gap-3">
         {/* Asset selector - always visible */}
         <AssetSelector 
           assets={assets}
@@ -196,19 +196,19 @@ function ChartPageContent() {
         />
         
         {/* Network badge - desktop only */}
-        <span className="text-[#787B86] text-xs hidden md:inline">/USD</span>
+        <span className="text-[var(--text-muted)] text-xs hidden md:inline">/USD</span>
         
         {/* Navigation - desktop only */}
         <div className="hidden md:flex items-center gap-1 ml-auto">
           <Link 
             href={`/chart?asset=${selectedAsset.id}`}
-            className="px-3 py-1 text-xs bg-[#2962FF] text-white rounded"
+            className="px-3 py-1.5 text-xs font-medium bg-[var(--accent)] text-white rounded-md interactive"
           >
             Chart
           </Link>
           <Link 
             href={`/data?asset=${selectedAsset.id}`}
-            className="px-3 py-1 text-xs bg-[#2A2E39] text-[#787B86] hover:text-[#D1D4DC] rounded"
+            className="px-3 py-1.5 text-xs font-medium bg-[var(--surface-2)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md interactive"
           >
             Data Table
           </Link>
@@ -217,7 +217,7 @@ function ChartPageContent() {
         {/* Mobile: Data link */}
         <Link 
           href={`/data?asset=${selectedAsset.id}`}
-          className="md:hidden ml-auto px-3 py-2 text-sm text-[#787B86]"
+          className="md:hidden ml-auto px-3 py-2 text-sm text-[var(--text-secondary)] interactive rounded-md"
         >
           Data
         </Link>
@@ -229,13 +229,13 @@ function ChartPageContent() {
       </div>
 
       {/* Bottom bar - hidden on mobile (info is in bottom sheet) */}
-      <div className="hidden md:flex h-8 bg-[#1E222D] border-t border-[#2A2E39] items-center px-4 justify-between">
+      <div className="hidden md:flex h-9 bg-[var(--surface-1)] border-t border-[var(--border-subtle)] items-center px-4 justify-between">
         <div className="flex items-center gap-4">
           <a
             href={`https://twitter.com/${selectedAsset.founder}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-[#787B86] hover:text-[#D1D4DC] text-xs"
+            className="flex items-center gap-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs transition-colors"
           >
             <FounderAvatar founder={selectedAsset.founder} color={selectedAsset.color} />
             <span>@{selectedAsset.founder}</span>
@@ -243,7 +243,7 @@ function ChartPageContent() {
           {/* Keyword filter indicator */}
           {eventsMetadata.tweet_filter_note && (
             <span 
-              className="text-xs px-2 py-0.5 rounded bg-[#2A2E39] text-[#787B86] border border-[#363A45]"
+              className="badge badge-info"
               title={`Keyword filter: "${eventsMetadata.keyword_filter}"`}
             >
               {eventsMetadata.tweet_filter_note}
@@ -252,14 +252,14 @@ function ChartPageContent() {
           {/* Data quality note */}
           {selectedAsset.data_note && (
             <span 
-              className="text-xs px-2 py-0.5 rounded bg-amber-900/30 text-amber-400/80 border border-amber-600/30"
+              className="badge badge-warning"
               title={selectedAsset.data_note}
             >
               ⚠️ Limited data
             </span>
           )}
         </div>
-        <div className="text-[#787B86] text-xs">
+        <div className="text-[var(--text-muted)] text-xs tabular-nums">
           {tweetEvents.length} tweets • Data from X API & GeckoTerminal
           {lastUpdated && (
             <span title={`Last updated: ${new Date(lastUpdated).toLocaleString()}`}>
