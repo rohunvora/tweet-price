@@ -1,0 +1,154 @@
+{
+  "generated_at": "2025-12-20T16:16:00.167376Z",
+  "asset": "useless",
+  "asset_name": "USELESS",
+  "founder": "theunipcs",
+  "summary": {
+    "total_tweets": 428,
+    "tweets_with_price": 426,
+    "date_range": {
+      "start": "2025-05-23",
+      "end": "2025-12-20"
+    },
+    "total_days_analyzed": 366
+  },
+  "daily_comparison": {
+    "tweet_day_count": 141,
+    "tweet_day_avg_return": 1.12,
+    "tweet_day_win_rate": 51.8,
+    "tweet_day_distribution": {
+      "count": 141,
+      "mean": 1.12,
+      "median": 0.33,
+      "std_dev": 13.81,
+      "min": -26.88,
+      "max": 51.61,
+      "q1": -7.53,
+      "q3": 9.15,
+      "positive_count": 73,
+      "negative_count": 68
+    },
+    "no_tweet_day_count": 224,
+    "no_tweet_day_avg_return": -0.18,
+    "no_tweet_day_win_rate": 48.2,
+    "no_tweet_day_distribution": {
+      "count": 224,
+      "mean": -0.18,
+      "median": -0.0,
+      "std_dev": 4.66,
+      "min": -14.94,
+      "max": 31.58,
+      "q1": -0.0,
+      "q3": 0.0,
+      "positive_count": 108,
+      "negative_count": 116
+    },
+    "t_statistic": 1.285,
+    "p_value": 0.1997,
+    "significant": false,
+    "confidence_label": "none"
+  },
+  "correlation": {
+    "correlation_7d": 0.541,
+    "p_value": 0.0,
+    "significant": true,
+    "sample_size": 366,
+    "strength_label": "moderate"
+  },
+  "current_status": {
+    "days_since_last_tweet": 0,
+    "price_change_during_silence": null,
+    "last_tweet_date": "2025-12-20"
+  },
+  "limitations": {
+    "sample_size_warning": false,
+    "borderline_significance": false,
+    "short_history": false,
+    "notes": [
+      "Win rate of 51.8% is near random (50%)",
+      "Correlation does not imply causation"
+    ]
+  },
+  "quiet_periods": [
+    {
+      "start_ts": 1747987440,
+      "end_ts": 1748508780,
+      "gap_days": 6.0,
+      "start_date": "2025-05-23",
+      "end_date": "2025-05-29",
+      "price_start": 0.08477562623188248,
+      "price_end": null,
+      "change_pct": null
+    },
+    {
+      "start_ts": 1748508780,
+      "end_ts": 1748935380,
+      "gap_days": 4.9,
+      "start_date": "2025-05-29",
+      "end_date": "2025-06-03",
+      "price_start": 0.08477562623188248,
+      "price_end": null,
+      "change_pct": null
+    },
+    {
+      "start_ts": 1749724260,
+      "end_ts": 1750007460,
+      "gap_days": 3.3,
+      "start_date": "2025-06-12",
+      "end_date": "2025-06-15",
+      "price_start": 0.08477562623188248,
+      "price_end": null,
+      "change_pct": null
+    },
+    {
+      "start_ts": 1750958520,
+      "end_ts": 1751303520,
+      "gap_days": 4.0,
+      "start_date": "2025-06-26",
+      "end_date": "2025-06-30",
+      "price_start": 0.1359195371035598,
+      "price_end": 0.20324484,
+      "change_pct": 49.5
+    },
+    {
+      "start_ts": 1751534760,
+      "end_ts": 1751809380,
+      "gap_days": 3.2,
+      "start_date": "2025-07-03",
+      "end_date": "2025-07-06",
+      "price_start": 0.2595873643124532,
+      "price_end": 0.29299424,
+      "change_pct": 12.9
+    },
+    {
+      "start_ts": 1752739620,
+      "end_ts": 1753109100,
+      "gap_days": 4.3,
+      "start_date": "2025-07-17",
+      "end_date": "2025-07-21",
+      "price_start": 0.2875778984401978,
+      "price_end": 0.27507273,
+      "change_pct": -4.3
+    },
+    {
+      "start_ts": 1756481880,
+      "end_ts": 1756754640,
+      "gap_days": 3.2,
+      "start_date": "2025-08-29",
+      "end_date": "2025-09-01",
+      "price_start": 0.2136282747243915,
+      "price_end": 0.17092113,
+      "change_pct": -20.0
+    },
+    {
+      "start_ts": 1764307898,
+      "end_ts": 1764651861,
+      "gap_days": 4.0,
+      "start_date": "2025-11-28",
+      "end_date": "2025-12-02",
+      "price_start": 0.1149028535480036,
+      "price_end": 0.11772857,
+      "change_pct": 2.5
+    }
+  ]
+}

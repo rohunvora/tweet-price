@@ -1,0 +1,74 @@
+{
+  "generated_at": "2025-12-20T16:15:47.042902Z",
+  "asset": "monad",
+  "asset_name": "MON",
+  "founder": "keoneHD",
+  "summary": {
+    "total_tweets": 60,
+    "tweets_with_price": 60,
+    "date_range": {
+      "start": "2025-11-24",
+      "end": "2025-12-17"
+    },
+    "total_days_analyzed": 53
+  },
+  "daily_comparison": {
+    "tweet_day_count": 21,
+    "tweet_day_avg_return": -0.74,
+    "tweet_day_win_rate": 33.3,
+    "tweet_day_distribution": {
+      "count": 21,
+      "mean": -0.74,
+      "median": -2.54,
+      "std_dev": 13.82,
+      "min": -14.35,
+      "max": 52.39,
+      "q1": -8.02,
+      "q3": 2.52,
+      "positive_count": 7,
+      "negative_count": 14
+    },
+    "no_tweet_day_count": 31,
+    "no_tweet_day_avg_return": -0.42,
+    "no_tweet_day_win_rate": 6.5,
+    "no_tweet_day_distribution": {
+      "count": 31,
+      "mean": -0.42,
+      "median": 0.0,
+      "std_dev": 4.46,
+      "min": -12.17,
+      "max": 12.48,
+      "q1": 0.0,
+      "q3": 0.0,
+      "positive_count": 2,
+      "negative_count": 4
+    },
+    "t_statistic": -0.119,
+    "p_value": 0.9058,
+    "significant": false,
+    "confidence_label": "none"
+  },
+  "correlation": {
+    "correlation_7d": 0.067,
+    "p_value": 0.6352,
+    "significant": false,
+    "sample_size": 53,
+    "strength_label": "negligible"
+  },
+  "current_status": {
+    "days_since_last_tweet": 0,
+    "price_change_during_silence": null,
+    "last_tweet_date": "2025-12-17"
+  },
+  "limitations": {
+    "sample_size_warning": true,
+    "borderline_significance": false,
+    "short_history": true,
+    "notes": [
+      "Small sample: only 21 tweet-days analyzed",
+      "Limited history: 53 days may not capture full market cycles",
+      "Correlation does not imply causation"
+    ]
+  },
+  "quiet_periods": []
+}

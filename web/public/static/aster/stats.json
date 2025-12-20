@@ -1,0 +1,85 @@
+{
+  "generated_at": "2025-12-20T16:15:40.196492Z",
+  "asset": "aster",
+  "asset_name": "ASTER",
+  "founder": "cz_binance",
+  "summary": {
+    "total_tweets": 308,
+    "tweets_with_price": 308,
+    "date_range": {
+      "start": "2025-09-17",
+      "end": "2025-12-19"
+    },
+    "total_days_analyzed": 185
+  },
+  "daily_comparison": {
+    "tweet_day_count": 79,
+    "tweet_day_avg_return": 1.23,
+    "tweet_day_win_rate": 44.3,
+    "tweet_day_distribution": {
+      "count": 79,
+      "mean": 1.23,
+      "median": -0.96,
+      "std_dev": 14.07,
+      "min": -25.29,
+      "max": 85.38,
+      "q1": -5.7,
+      "q3": 4.71,
+      "positive_count": 35,
+      "negative_count": 44
+    },
+    "no_tweet_day_count": 105,
+    "no_tweet_day_avg_return": 0.29,
+    "no_tweet_day_win_rate": 48.6,
+    "no_tweet_day_distribution": {
+      "count": 105,
+      "mean": 0.29,
+      "median": -0.0,
+      "std_dev": 5.68,
+      "min": -18.4,
+      "max": 51.94,
+      "q1": -0.18,
+      "q3": 0.19,
+      "positive_count": 51,
+      "negative_count": 54
+    },
+    "t_statistic": 0.618,
+    "p_value": 0.5376,
+    "significant": false,
+    "confidence_label": "none"
+  },
+  "correlation": {
+    "correlation_7d": 0.27,
+    "p_value": 0.0002,
+    "significant": true,
+    "sample_size": 185,
+    "strength_label": "weak"
+  },
+  "current_status": {
+    "days_since_last_tweet": 0,
+    "price_change_during_silence": null,
+    "last_tweet_date": "2025-12-19"
+  },
+  "limitations": {
+    "sample_size_warning": true,
+    "borderline_significance": false,
+    "short_history": true,
+    "notes": [
+      "Small sample: only 79 tweet-days analyzed",
+      "Limited history: 185 days may not capture full market cycles",
+      "Correlation does not imply causation"
+    ]
+  },
+  "quiet_periods": [
+    {
+      "start_ts": 1764377629,
+      "end_ts": 1764651541,
+      "gap_days": 3.2,
+      "start_date": "2025-11-29",
+      "end_date": "2025-12-02",
+      "price_start": 1.0470931,
+      "price_end": 1.01181159125779,
+      "change_pct": -3.4
+    }
+  ]
+}
