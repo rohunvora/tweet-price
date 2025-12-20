@@ -2,7 +2,13 @@
 Cache Twitter profile avatars locally.
 Downloads, resizes to 48x48, and stores in public/avatars.
 Fetches avatars for all enabled asset founders.
+
+Usage:
+    python cache_avatars.py                 # Cache all founders
+    python cache_avatars.py --asset pump    # Cache specific asset's founder
+    python cache_avatars.py --force         # Re-download even if cached
 """
+import argparse
 from typing import Optional, List, Dict
 import httpx
 import json
@@ -10,7 +16,7 @@ import time
 from PIL import Image
 from io import BytesIO
 from config import AVATARS_DIR, X_BEARER_TOKEN, X_API_BASE
-from db import get_connection, init_schema, get_enabled_assets
+from db import get_connection, init_schema, get_enabled_assets, get_asset
 
 # Avatar size (small for fast canvas rendering)
 AVATAR_SIZE = 48
@@ -88,65 +94,95 @@ def get_all_founders() -> List[Dict]:
     return founders
 
 
+def cache_avatar(username: str, force: bool = False) -> bool:
+    """Cache a single avatar. Returns True on success."""
+    output_path = AVATARS_DIR / f"{username}.png"
+
+    # Skip if already cached (unless force)
+    if output_path.exists() and not force:
+        size_kb = output_path.stat().st_size / 1024
+        print(f"✓ @{username}: Already cached ({size_kb:.1f} KB)")
+        return True
+
+    print(f"→ @{username}: Fetching profile image...")
+
+    img_url = get_user_profile_image(username)
+
+    if not img_url:
+        print(f"  ✗ Could not get profile image URL")
+        return False
+
+    print(f"  URL: {img_url}")
+
+    # Download and resize
+    if download_and_resize(img_url, output_path):
+        size_kb = output_path.stat().st_size / 1024
+        print(f"  ✓ Saved: {output_path.name} ({size_kb:.1f} KB)")
+        return True
+    else:
+        print(f"  ✗ Failed to download/resize")
+        return False
+
+
 def main():
-    """Cache avatars for all asset founders."""
+    """Cache avatars for asset founders."""
+    parser = argparse.ArgumentParser(description="Cache Twitter profile avatars")
+    parser.add_argument("--asset", type=str, help="Cache avatar for specific asset's founder")
+    parser.add_argument("--force", action="store_true", help="Re-download even if cached")
+    args = parser.parse_args()
+
     print("=" * 60)
-    print("Avatar Caching - All Founders")
+    print("Avatar Caching")
     print("=" * 60)
 
     # Ensure avatars directory exists
     AVATARS_DIR.mkdir(parents=True, exist_ok=True)
 
-    founders = get_all_founders()
-    print(f"\nFound {len(founders)} unique founders to cache:")
-    for f in founders:
-        print(f"  - @{f['username']} ({f['asset_name']})")
+    if args.asset:
+        # Single asset mode
+        conn = get_connection()
+        init_schema(conn)
+        asset = get_asset(conn, args.asset)
+        conn.close()
 
-    success_count = 0
-    fail_count = 0
+        if not asset:
+            print(f"✗ Asset '{args.asset}' not found")
+            return
 
-    for founder in founders:
-        username = founder["username"]
-        output_path = AVATARS_DIR / f"{username}.png"
+        founder = asset.get("founder")
+        if not founder:
+            print(f"✗ Asset '{args.asset}' has no founder defined")
+            return
 
-        # Skip if already cached
-        if output_path.exists():
-            size_kb = output_path.stat().st_size / 1024
-            print(f"\n✓ @{username}: Already cached ({size_kb:.1f} KB)")
-            success_count += 1
-            continue
+        print(f"\nCaching avatar for @{founder} ({asset.get('name')})")
+        success = cache_avatar(founder, force=args.force)
+        print(f"\n{'✓ Success' if success else '✗ Failed'}")
+    else:
+        # All founders mode
+        founders = get_all_founders()
+        print(f"\nFound {len(founders)} unique founders to cache:")
+        for f in founders:
+            print(f"  - @{f['username']} ({f['asset_name']})")
 
-        print(f"\n→ @{username}: Fetching profile image...")
+        success_count = 0
+        fail_count = 0
 
-        img_url = get_user_profile_image(username)
+        for founder in founders:
+            print()
+            if cache_avatar(founder["username"], force=args.force):
+                success_count += 1
+            else:
+                fail_count += 1
+            time.sleep(1.0)  # Rate limit
 
-        if not img_url:
-            print(f"  ✗ Could not get profile image URL")
-            fail_count += 1
-            continue
-
-        print(f"  URL: {img_url}")
-
-        # Download and resize
-        if download_and_resize(img_url, output_path):
-            size_kb = output_path.stat().st_size / 1024
-            print(f"  ✓ Saved: {output_path.name} ({size_kb:.1f} KB)")
-            success_count += 1
-        else:
-            print(f"  ✗ Failed to download/resize")
-            fail_count += 1
-
-        # Rate limit: wait between requests
-        time.sleep(1.0)
-
-    # Summary
-    print("\n" + "=" * 60)
-    print("SUMMARY")
-    print("=" * 60)
-    print(f"  Cached: {success_count}/{len(founders)}")
-    if fail_count > 0:
-        print(f"  Failed: {fail_count}")
-    print(f"  Output: {AVATARS_DIR}")
+        # Summary
+        print("\n" + "=" * 60)
+        print("SUMMARY")
+        print("=" * 60)
+        print(f"  Cached: {success_count}/{len(founders)}")
+        if fail_count > 0:
+            print(f"  Failed: {fail_count}")
+        print(f"  Output: {AVATARS_DIR}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,168 @@
+name: Add Asset
+
+on:
+  workflow_dispatch:
+    inputs:
+      asset_id:
+        description: 'Asset ID (lowercase, no spaces, e.g., "mytoken")'
+        required: true
+        type: string
+      asset_name:
+        description: 'Display name (e.g., "My Token")'
+        required: true
+        type: string
+      founder:
+        description: 'Twitter handle without @ (e.g., "elonmusk")'
+        required: true
+        type: string
+      coingecko_id:
+        description: 'CoinGecko ID (leave empty for DEX tokens)'
+        required: false
+        type: string
+      network:
+        description: 'Network (for DEX tokens)'
+        required: false
+        type: choice
+        default: ''
+        options:
+          - ''
+          - solana
+          - ethereum
+          - bsc
+          - base
+      pool_address:
+        description: 'DEX pool address (for DEX tokens)'
+        required: false
+        type: string
+      color:
+        description: 'Brand color (hex)'
+        required: false
+        default: '#3B82F6'
+        type: string
+      refresh_only:
+        description: 'Refresh existing asset (skip adding to config)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  add-asset:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore database from cache
+        uses: actions/cache@v4
+        id: cache-db
+        with:
+          path: data/analytics.duckdb
+          key: analytics-db-${{ github.run_id }}
+          restore-keys: |
+            analytics-db-
+
+      - name: Create data directory
+        run: mkdir -p data
+
+      - name: Run add_asset.py
+        env:
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          BIRDEYE_API_KEY: ${{ secrets.BIRDEYE_API_KEY }}
+        run: |
+          cd scripts
+
+          # Build the command
+          CMD="python add_asset.py ${{ inputs.asset_id }}"
+
+          if [ "${{ inputs.refresh_only }}" = "true" ]; then
+            CMD="$CMD --refresh"
+          else
+            CMD="$CMD --name '${{ inputs.asset_name }}'"
+            CMD="$CMD --founder '${{ inputs.founder }}'"
+
+            if [ -n "${{ inputs.coingecko_id }}" ]; then
+              CMD="$CMD --coingecko '${{ inputs.coingecko_id }}'"
+            fi
+
+            if [ -n "${{ inputs.network }}" ]; then
+              CMD="$CMD --network '${{ inputs.network }}'"
+            fi
+
+            if [ -n "${{ inputs.pool_address }}" ]; then
+              CMD="$CMD --pool '${{ inputs.pool_address }}'"
+            fi
+
+            if [ -n "${{ inputs.color }}" ]; then
+              CMD="$CMD --color '${{ inputs.color }}'"
+            fi
+          fi
+
+          echo "Running: $CMD"
+          eval $CMD
+
+      - name: Save database to cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/analytics.duckdb
+          key: analytics-db-${{ github.run_id }}
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "Asset Bot"
+          git config user.email "bot@tweet-price.com"
+
+          # Add all changes
+          git add -A
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          # Commit with descriptive message
+          if [ "${{ inputs.refresh_only }}" = "true" ]; then
+            git commit -m "chore: refresh asset ${{ inputs.asset_id }}"
+          else
+            git commit -m "feat: add asset ${{ inputs.asset_name }} (${{ inputs.asset_id }})"
+          fi
+
+          # Push changes
+          git push
+
+      - name: Summary
+        run: |
+          echo "## Asset Added Successfully! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Asset ID | \`${{ inputs.asset_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Name | ${{ inputs.asset_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Founder | @${{ inputs.founder }} |" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ inputs.coingecko_id }}" ]; then
+            echo "| CoinGecko | ${{ inputs.coingecko_id }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -n "${{ inputs.network }}" ]; then
+            echo "| Network | ${{ inputs.network }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The site will auto-deploy via Vercel in ~2 minutes." >> $GITHUB_STEP_SUMMARY
