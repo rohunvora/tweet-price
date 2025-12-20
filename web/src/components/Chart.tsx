@@ -1557,12 +1557,11 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
           }}
         >
           <div className="flex items-start gap-2 mb-2">
-            <div 
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-              style={{ backgroundColor: asset.color }}
-            >
-              {asset.founder.charAt(0).toUpperCase()}
-            </div>
+            <img
+              src={`/avatars/${asset.founder}.png`}
+              alt={asset.founder}
+              className="w-8 h-8 rounded-full bg-[#2A2E39]"
+            />
             <div>
               <div className="text-[#D1D4DC] font-medium text-sm">@{asset.founder}</div>
               <div className="text-[#787B86] text-xs">
