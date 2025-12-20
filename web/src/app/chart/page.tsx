@@ -260,10 +260,10 @@ function ChartPageContent() {
           )}
         </div>
         <div className="text-[var(--text-muted)] text-xs tabular-nums">
-          {tweetEvents.length} tweets • Data from X API & GeckoTerminal
+          {tweetEvents.length} tweets • X + GeckoTerminal
           {lastUpdated && (
             <span title={`Last updated: ${new Date(lastUpdated).toLocaleString()}`}>
-              {' '}• Updated {formatRelativeTime(lastUpdated)}
+              {' '}• {formatRelativeTime(lastUpdated)}
             </span>
           )}
         </div>

@@ -1469,24 +1469,24 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
           onClick={() => setShowBubbles(!showBubbles)}
           className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs transition-colors ${
             showBubbles 
-              ? 'bg-[#2A2E39] text-white border border-[#3A3E49]' 
-              : 'bg-[#2A2E39] text-[#787B86] hover:text-[#D1D4DC]'
+              ? 'bg-[var(--surface-2)] text-white border border-[var(--border-default)]' 
+              : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
           }`}
         >
           <span>🐦</span>
-          <span>Tweet Markers</span>
+          <span>Tweets</span>
         </button>
 
         <div className="flex items-center gap-1 ml-2">
           <button
             onClick={jumpToLastTweet}
-            className="px-2 py-1 text-xs text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39] rounded transition-colors"
+            className="px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
           >
             Last Tweet
           </button>
           <button
             onClick={jumpToAllTime}
-            className="px-2 py-1 text-xs text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39] rounded transition-colors"
+            className="px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
           >
             All Time
           </button>
@@ -1498,9 +1498,9 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
                      bottom-0 left-0 right-0 
                      md:bottom-2 md:left-2 md:right-auto
                      flex items-center justify-around md:justify-start gap-1
-                     bg-[#1E222D] md:bg-transparent 
+                     bg-[var(--surface-1)] md:bg-transparent 
                      py-3 md:py-0 
-                     border-t border-[#2A2E39] md:border-0
+                     border-t border-[var(--border-subtle)] md:border-0
                      pb-safe">
         {TIMEFRAMES.map((tf) => {
           const isAvailable = availableTimeframes.has(tf.value);
@@ -1515,8 +1515,8 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
                 isActive
                   ? 'text-white'
                   : isAvailable
-                    ? 'text-[#787B86] hover:text-[#D1D4DC] md:hover:bg-[#2A2E39]'
-                    : 'text-[#3A3E49] cursor-not-allowed'
+                    ? 'text-[var(--text-muted)] hover:text-[var(--text-primary)] md:hover:bg-[var(--surface-2)]'
+                    : 'text-[var(--text-disabled)] cursor-not-allowed'
               }`}
               style={isActive ? { backgroundColor: asset.color } : undefined}
             >
@@ -1527,21 +1527,21 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       </div>
       
       {/* Help text - desktop only */}
-      <span className="hidden md:block absolute bottom-2 left-32 text-[10px] text-[#555] select-none z-20">
+      <span className="hidden md:block absolute bottom-2 left-32 text-[10px] text-[var(--text-disabled)] select-none z-20">
         Drag to pan • Scroll to zoom
       </span>
       
       {/* Legend - desktop only */}
       {showBubbles && (
-        <div className="absolute bottom-14 md:bottom-2 right-2 z-20 hidden md:flex items-center gap-3 bg-[#1E222D]/90 px-3 py-1.5 rounded text-[10px]">
+        <div className="absolute bottom-14 md:bottom-2 right-2 z-20 hidden md:flex items-center gap-3 bg-[var(--surface-1)]/90 px-3 py-1.5 rounded text-[10px]">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full border border-white bg-transparent" />
-            <span className="text-[#D1D4DC]">Single tweet</span>
+            <div className="w-3 h-3 rounded-full border border-white/50 bg-transparent" />
+            <span className="text-[var(--text-secondary)]">1 tweet</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="relative">
               <div 
-                className="w-3 h-3 rounded-full border border-white"
+                className="w-3 h-3 rounded-full border border-white/50"
                 style={{ backgroundColor: `${asset.color}66` }}
               />
               <span 
@@ -1549,33 +1549,33 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
                 style={{ backgroundColor: asset.color }}
               >3</span>
             </div>
-            <span className="text-[#D1D4DC]">Multiple tweets</span>
+            <span className="text-[var(--text-secondary)]">3+ tweets</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-4 border-t border-dashed border-[#EF5350]" />
-            <span className="text-[#D1D4DC]">Silence gap</span>
+            <div className="w-4 border-t border-dashed border-[var(--negative)]" />
+            <span className="text-[var(--text-secondary)]">Quiet period</span>
           </div>
         </div>
       )}
 
       {/* Loading indicator */}
       {loading && (
-        <div className="absolute top-14 right-2 z-20 flex items-center gap-2 bg-[#1E222D] px-3 py-1 rounded">
+        <div className="absolute top-14 right-2 z-20 flex items-center gap-2 bg-[var(--surface-1)] px-3 py-1 rounded">
           <div
             className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"
             style={{ borderColor: asset.color, borderTopColor: 'transparent' }}
           />
-          <span className="text-xs text-[#787B86]">Loading {asset.name}...</span>
+          <span className="text-xs text-[var(--text-muted)]">Loading {asset.name}...</span>
         </div>
       )}
 
       {/* No data message */}
       {noData && !loading && (
-        <div className="absolute inset-0 flex items-center justify-center z-20 bg-[#131722]/80">
-          <div className="text-center p-6 bg-[#1E222D] rounded-lg border border-[#2A2E39]">
+        <div className="absolute inset-0 flex items-center justify-center z-20 bg-[var(--surface-0)]/80">
+          <div className="text-center p-6 bg-[var(--surface-1)] rounded-lg border border-[var(--border-subtle)]">
             <div className="text-4xl mb-3">📊</div>
-            <div className="text-[#D1D4DC] font-medium mb-1">No {timeframe} data available</div>
-            <div className="text-[#787B86] text-sm mb-3">
+            <div className="text-[var(--text-primary)] font-medium mb-1">No {timeframe} data available</div>
+            <div className="text-[var(--text-muted)] text-sm mb-3">
               {asset.name} only has daily price data from CoinGecko
             </div>
             <button
@@ -1592,7 +1592,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       {/* Tweet tooltip */}
       {hoveredTweet && (
         <div
-          className="absolute z-30 pointer-events-none bg-[#1E222D] border border-[#2A2E39] rounded-lg p-3 shadow-xl max-w-xs tooltip-enter"
+          className="absolute z-30 pointer-events-none bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded-lg p-3 shadow-xl max-w-xs tooltip-enter"
           style={{
             left: Math.min(tooltipPos.x + 20, containerWidth - 300),
             top: Math.max(tooltipPos.y - 60, 10),
@@ -1602,34 +1602,40 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
             <img
               src={`/avatars/${asset.founder}.png`}
               alt={asset.founder}
-              className="w-8 h-8 rounded-full bg-[#2A2E39]"
+              className="w-8 h-8 rounded-full bg-[var(--surface-2)]"
             />
             <div>
-              <div className="text-[#D1D4DC] font-medium text-sm">@{asset.founder}</div>
-              <div className="text-[#787B86] text-xs">
-                {new Date(hoveredTweet.timestamp * 1000).toLocaleString()}
+              <div className="text-[var(--text-primary)] font-medium text-sm">@{asset.founder}</div>
+              <div className="text-[var(--text-muted)] text-xs">
+                {new Date(hoveredTweet.timestamp * 1000).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
               </div>
             </div>
           </div>
-          <p className="text-sm text-[#D1D4DC] line-clamp-3 mb-2">{hoveredTweet.text}</p>
-          <div className="flex items-center gap-4 text-xs text-[#787B86]">
+          <p className="text-sm text-[var(--text-primary)] line-clamp-3 mb-2">{hoveredTweet.text}</p>
+          <div className="flex items-center gap-4 text-xs text-[var(--text-muted)]">
             <span>❤️ {hoveredTweet.likes.toLocaleString()}</span>
             <span>🔁 {hoveredTweet.retweets.toLocaleString()}</span>
           </div>
           {hoveredTweet.change_1h_pct !== null && (
-            <div className="mt-2 pt-2 border-t border-[#2A2E39] flex items-center gap-3 text-xs">
-              <span className="text-[#787B86]">Price impact:</span>
-              <span className={hoveredTweet.change_1h_pct >= 0 ? 'text-[#26A69A]' : 'text-[#EF5350]'}>
+            <div className="mt-2 pt-2 border-t border-[var(--border-subtle)] flex items-center gap-3 text-xs">
+              <span className="text-[var(--text-muted)]">After tweet:</span>
+              <span className={hoveredTweet.change_1h_pct >= 0 ? 'text-[var(--positive)]' : 'text-[var(--negative)]'}>
                 1h: {hoveredTweet.change_1h_pct >= 0 ? '+' : ''}{hoveredTweet.change_1h_pct.toFixed(1)}%
               </span>
               {hoveredTweet.change_24h_pct !== null && (
-                <span className={hoveredTweet.change_24h_pct >= 0 ? 'text-[#26A69A]' : 'text-[#EF5350]'}>
+                <span className={hoveredTweet.change_24h_pct >= 0 ? 'text-[var(--positive)]' : 'text-[var(--negative)]'}>
                   24h: {hoveredTweet.change_24h_pct >= 0 ? '+' : ''}{hoveredTweet.change_24h_pct.toFixed(1)}%
                 </span>
               )}
             </div>
           )}
-          <div className="mt-2 text-xs" style={{ color: asset.color }}>Tap to dismiss</div>
+          {/* Touch hint - only show on touch devices */}
+          <div className="mt-2 text-xs md:hidden" style={{ color: asset.color }}>Tap to dismiss</div>
         </div>
       )}
     </div>
