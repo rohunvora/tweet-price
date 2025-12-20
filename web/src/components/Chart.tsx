@@ -919,9 +919,16 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     // Uses double-requestAnimationFrame to let chart finish internal resize
     // before we redraw markers. Without this, marker positions can be stale.
     // -------------------------------------------------------------------------
+    // Track previous dimensions to avoid unnecessary state updates
+    let prevWidth = 0;
+    let prevHeight = 0;
+    
     const resizeObserver = new ResizeObserver(() => {
       const { width, height } = container.getBoundingClientRect();
-      if (width > 0 && height > 0) {
+      // Only process if dimensions actually changed (prevents resize loops)
+      if (width > 0 && height > 0 && (width !== prevWidth || height !== prevHeight)) {
+        prevWidth = width;
+        prevHeight = height;
         chart.applyOptions({ width, height });
         setContainerWidth(width);
         // Wait for chart to finish internal resize before redrawing markers
