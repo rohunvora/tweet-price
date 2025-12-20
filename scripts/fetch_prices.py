@@ -290,52 +290,66 @@ def fetch_birdeye_all_timeframes(
 ) -> Dict[str, List[Dict]]:
     """
     Fetch all timeframes for a token from Birdeye.
-    
+
     Args:
         token_mint: Token mint address
         launch_timestamp: Launch date as Unix timestamp (seconds)
         timeframes: List of timeframes to fetch (default: all)
         chain: Blockchain
-    
+
     Returns dict of timeframe -> candles.
+
+    NOTE: Birdeye returns max 1000 candles per request. It uses cursor-style
+    pagination - always returns 1000 candles starting from time_from, ignoring
+    time_to for pagination purposes. To get full history, we move time_from
+    forward after each request.
     """
     if timeframes is None:
         timeframes = TIMEFRAMES
-    
+
     now_ts = int(datetime.utcnow().timestamp())
     results = {}
-    
+
+    # Interval in seconds for each timeframe (used to advance cursor)
+    interval_seconds = {
+        "1m": 60,
+        "15m": 15 * 60,
+        "1h": 60 * 60,
+        "1d": 24 * 60 * 60,
+    }
+
     for tf in timeframes:
         print(f"    Fetching {tf} data from Birdeye...")
-        
+
         all_candles = []
-        
-        # Calculate window size based on timeframe (Birdeye returns max 1000 candles)
-        window_seconds = {
-            "1m": 1000 * 60,           # ~16.6 hours
-            "15m": 1000 * 15 * 60,     # ~10 days
-            "1h": 1000 * 60 * 60,      # ~41 days
-            "1d": 1000 * 24 * 60 * 60, # ~2.7 years
-        }.get(tf, 1000 * 60 * 60)
-        
         current_from = launch_timestamp
-        
+        page = 0
+
         while current_from < now_ts:
-            current_to = min(current_from + window_seconds, now_ts)
-            
+            page += 1
             candles = fetch_birdeye_ohlcv(
-                token_mint, tf, current_from, current_to, chain
+                token_mint, tf, current_from, now_ts, chain
             )
-            
-            if candles:
-                all_candles.extend(candles)
-                oldest = datetime.utcfromtimestamp(candles[0]["timestamp_epoch"]).strftime("%Y-%m-%d")
-                newest = datetime.utcfromtimestamp(candles[-1]["timestamp_epoch"]).strftime("%Y-%m-%d")
-                print(f"      Fetched {len(candles)} candles ({oldest} to {newest})")
-            
-            current_from = current_to
+
+            if not candles:
+                # No more data available
+                break
+
+            all_candles.extend(candles)
+            oldest = datetime.utcfromtimestamp(candles[0]["timestamp_epoch"]).strftime("%Y-%m-%d")
+            newest = datetime.utcfromtimestamp(candles[-1]["timestamp_epoch"]).strftime("%Y-%m-%d")
+            print(f"      Page {page}: {len(candles)} candles ({oldest} to {newest})")
+
+            if len(candles) < 1000:
+                # Less than max means we've reached the end
+                break
+
+            # Move cursor to after the last candle
+            last_ts = candles[-1]["timestamp_epoch"]
+            current_from = last_ts + interval_seconds.get(tf, 3600)
+
             time.sleep(RATE_LIMIT_DELAY)
-        
+
         if all_candles:
             # Sort and deduplicate
             seen = set()
@@ -344,10 +358,10 @@ def fetch_birdeye_all_timeframes(
                 if c["timestamp_epoch"] not in seen:
                     seen.add(c["timestamp_epoch"])
                     unique_candles.append(c)
-            
+
             results[tf] = unique_candles
             print(f"      Total: {len(unique_candles):,} candles")
-    
+
     return results
 
 
