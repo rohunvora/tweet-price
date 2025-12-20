@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-20T16:16:00.167376Z",
+  "generated_at": "2025-12-20T17:13:39.698574Z",
   "asset": "useless",
   "asset_name": "USELESS",
   "founder": "theunipcs",
@@ -10,41 +10,41 @@
       "start": "2025-05-23",
       "end": "2025-12-20"
     },
-    "total_days_analyzed": 366
+    "total_days_analyzed": 368
   },
   "daily_comparison": {
-    "tweet_day_count": 141,
+    "tweet_day_count": 143,
     "tweet_day_avg_return": 1.12,
-    "tweet_day_win_rate": 51.8,
+    "tweet_day_win_rate": 52.4,
     "tweet_day_distribution": {
-      "count": 141,
+      "count": 143,
       "mean": 1.12,
-      "median": 0.33,
-      "std_dev": 13.81,
+      "median": 0.34,
+      "std_dev": 13.75,
       "min": -26.88,
       "max": 51.61,
-      "q1": -7.53,
-      "q3": 9.15,
-      "positive_count": 73,
+      "q1": -7.56,
+      "q3": 9.14,
+      "positive_count": 75,
       "negative_count": 68
     },
     "no_tweet_day_count": 224,
-    "no_tweet_day_avg_return": -0.18,
-    "no_tweet_day_win_rate": 48.2,
+    "no_tweet_day_avg_return": -0.14,
+    "no_tweet_day_win_rate": 48.7,
     "no_tweet_day_distribution": {
       "count": 224,
-      "mean": -0.18,
+      "mean": -0.14,
       "median": -0.0,
-      "std_dev": 4.66,
+      "std_dev": 4.65,
       "min": -14.94,
       "max": 31.58,
       "q1": -0.0,
       "q3": 0.0,
-      "positive_count": 108,
-      "negative_count": 116
+      "positive_count": 109,
+      "negative_count": 115
     },
-    "t_statistic": 1.285,
-    "p_value": 0.1997,
+    "t_statistic": 1.264,
+    "p_value": 0.207,
     "significant": false,
     "confidence_label": "none"
   },
@@ -52,7 +52,7 @@
     "correlation_7d": 0.541,
     "p_value": 0.0,
     "significant": true,
-    "sample_size": 366,
+    "sample_size": 368,
     "strength_label": "moderate"
   },
   "current_status": {
@@ -65,7 +65,7 @@
     "borderline_significance": false,
     "short_history": false,
     "notes": [
-      "Win rate of 51.8% is near random (50%)",
+      "Win rate of 52.4% is near random (50%)",
       "Correlation does not imply causation"
     ]
   },
