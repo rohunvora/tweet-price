@@ -9,6 +9,7 @@ Usage:
     python compute_stats.py --asset pump    # Compute stats for specific asset
 """
 import argparse
+import calendar
 import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -38,21 +39,28 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 def load_daily_prices(conn, asset_id: str) -> Dict[int, float]:
-    """Load daily close prices as timestamp -> price map."""
+    """
+    Load daily close prices as timestamp -> price map.
+
+    IMPORTANT: Uses calendar.timegm() for UTC conversion, NOT datetime.timestamp().
+    datetime.timestamp() converts using LOCAL timezone, causing misalignment
+    with tweet timestamps (which are stored as UTC epochs). See GOTCHAS.md.
+    """
     cursor = conn.execute("""
         SELECT timestamp, close
         FROM prices
         WHERE asset_id = ? AND timeframe = '1d'
         ORDER BY timestamp
     """, [asset_id])
-    
+
     result = {}
     for row in cursor.fetchall():
         ts = row[0]
-        if hasattr(ts, 'timestamp'):
-            ts = int(ts.timestamp())
+        if hasattr(ts, 'timetuple'):
+            # Use calendar.timegm for UTC conversion (NOT datetime.timestamp())
+            ts = calendar.timegm(ts.timetuple())
         result[ts] = row[1]
-    
+
     return result
 
 
