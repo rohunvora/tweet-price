@@ -221,6 +221,73 @@ run: |
 
 ---
 
+## Data Overrides: Persistent Manual Fixes
+
+### Why Data Overrides Exist (scripts/data_overrides.json)
+
+**Problem:** One-time data fixes (removing outliers, excluding bad candles, filtering date ranges)
+get RESET when:
+- Data is re-fetched
+- Export is re-run
+- A new developer/agent doesn't know about the fix
+
+**Solution:** `data_overrides.json` contains all manual fixes in a declarative format.
+These are applied at EXPORT time, not stored in the database.
+
+**File location:** `scripts/data_overrides.json`
+
+### How It Works
+
+```
+Raw Data (DB) → Export → Apply Overrides → JSON Files (Frontend)
+```
+
+The database contains RAW data. Overrides are applied during export.
+This means:
+1. Raw data is never corrupted
+2. Fixes persist across re-fetches
+3. All fixes are documented and auditable
+4. You can always see what was fixed and WHY
+
+### Override Types
+
+1. **price_overrides** - Fix specific candles (cap HIGH, exclude candle)
+2. **tweet_exclusions** - Exclude specific tweet IDs from export
+3. **asset_data_ranges** - Override the date range for an asset's data
+4. **price_exclusions** - Exclude entire candles from export
+
+### Example: PUMP Fake Wick Fix
+
+```json
+{
+  "id": "pump-fake-wick-sept18",
+  "asset_id": "pump",
+  "timeframe": "1h",
+  "timestamp": "2025-09-18T18:00:00Z",
+  "action": "cap_high",
+  "value": 0.009,
+  "reason": "Fake wick from MEV bot/sniper. Original HIGH was ~0.02."
+}
+```
+
+### CRITICAL RULES
+
+1. **NEVER delete entries** without understanding WHY they were added
+2. **ALWAYS add a reason** when creating new overrides
+3. **Run export after changes** to verify they work
+4. **Check this file FIRST** when investigating data issues
+
+### When to Add an Override
+
+- Found a fake wick that the automatic detector missed
+- Need to exclude a specific bad candle
+- Need to restrict date range for an asset (data quality issues)
+- Need to exclude specific tweets (spam, off-topic, etc.)
+
+**DO NOT manually edit the database for one-time fixes.** Use data_overrides.json.
+
+---
+
 ## Checklist: Before You Commit
 
 - [ ] Did you read this file?
@@ -228,6 +295,7 @@ run: |
 - [ ] If modifying export: Did you test for duplicate timestamps?
 - [ ] If modifying fetch: Did you use calendar.timegm() for UTC?
 - [ ] If adding timeframes: Did you add to CASE statements?
+- [ ] If fixing data issues: Did you add to data_overrides.json (not manual DB edit)?
 - [ ] Run `python export_static.py` - does it complete without errors?
 - [ ] Open the frontend - do charts load without crashing?
 

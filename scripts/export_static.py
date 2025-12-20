@@ -35,6 +35,121 @@ from db import (
 
 
 # =============================================================================
+# DATA OVERRIDES - Manual fixes that persist across re-fetches
+# =============================================================================
+#
+# The data_overrides.json file contains manual fixes for data quality issues.
+# These are applied at EXPORT time, not stored in the database.
+#
+# This ensures:
+# 1. Raw data in DB is never corrupted
+# 2. Fixes persist even if data is re-fetched
+# 3. All fixes are documented and auditable
+# 4. Future developers/agents can understand what was fixed and why
+#
+# DO NOT delete entries from data_overrides.json without understanding why
+# they were added. See GOTCHAS.md.
+# =============================================================================
+
+OVERRIDES_FILE = Path(__file__).parent / "data_overrides.json"
+_overrides_cache = None
+
+
+def load_overrides() -> Dict[str, Any]:
+    """Load data overrides from JSON file. Cached after first load."""
+    global _overrides_cache
+    if _overrides_cache is not None:
+        return _overrides_cache
+
+    if not OVERRIDES_FILE.exists():
+        print("  [WARN] data_overrides.json not found - no manual fixes will be applied")
+        _overrides_cache = {}
+        return _overrides_cache
+
+    with open(OVERRIDES_FILE) as f:
+        _overrides_cache = json.load(f)
+
+    # Count overrides for logging
+    price_count = len(_overrides_cache.get("price_overrides", {}).get("entries", []))
+    tweet_count = len(_overrides_cache.get("tweet_exclusions", {}).get("entries", []))
+    range_count = len(_overrides_cache.get("asset_data_ranges", {}).get("entries", []))
+
+    if price_count + tweet_count + range_count > 0:
+        print(f"  Loaded {price_count} price overrides, {tweet_count} tweet exclusions, {range_count} range filters")
+
+    return _overrides_cache
+
+
+def get_price_overrides(asset_id: str, timeframe: str) -> Dict[int, Dict]:
+    """
+    Get price overrides for an asset/timeframe as a dict of timestamp -> override.
+
+    Returns: {unix_timestamp: {"action": "cap_high", "value": 0.009, ...}}
+    """
+    overrides = load_overrides()
+    entries = overrides.get("price_overrides", {}).get("entries", [])
+
+    result = {}
+    for entry in entries:
+        if entry.get("asset_id") == asset_id and entry.get("timeframe") == timeframe:
+            # Parse timestamp to Unix epoch
+            ts_str = entry.get("timestamp")
+            if ts_str:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                ts_epoch = int(ts.timestamp())
+                result[ts_epoch] = entry
+
+    return result
+
+
+def get_asset_date_range(asset_id: str, data_type: str = "prices") -> Optional[datetime]:
+    """
+    Get minimum date for an asset's data (beyond launch_date filter).
+
+    Returns: datetime or None if no override exists
+    """
+    overrides = load_overrides()
+    entries = overrides.get("asset_data_ranges", {}).get("entries", [])
+
+    for entry in entries:
+        if entry.get("asset_id") == asset_id and entry.get("type") == data_type:
+            min_date_str = entry.get("min_date")
+            if min_date_str:
+                return datetime.fromisoformat(min_date_str.replace("Z", "+00:00"))
+
+    return None
+
+
+def get_excluded_tweet_ids(asset_id: str) -> set:
+    """Get set of tweet IDs to exclude from export."""
+    overrides = load_overrides()
+    entries = overrides.get("tweet_exclusions", {}).get("entries", [])
+
+    return {
+        entry.get("tweet_id")
+        for entry in entries
+        if entry.get("asset_id") == asset_id and entry.get("tweet_id")
+    }
+
+
+def apply_price_override(candle: Dict, override: Dict) -> Dict:
+    """Apply a price override to a candle. Returns modified candle."""
+    action = override.get("action")
+    value = override.get("value")
+
+    if action == "cap_high" and value is not None:
+        if candle.get("h", 0) > value:
+            candle["h"] = round(value, 8)
+    elif action == "cap_low" and value is not None:
+        if candle.get("l", 0) < value:
+            candle["l"] = round(value, 8)
+    elif action == "exclude":
+        return None  # Signal to skip this candle
+
+    return candle
+
+
+# =============================================================================
 # FAKE WICK DETECTION - Automatic outlier capping at export time
 # =============================================================================
 #
@@ -138,17 +253,32 @@ def export_timeframe(
     output_dir: Path
 ) -> int:
     """Export all data for a timeframe to JSON."""
-    cursor = conn.execute("""
-        SELECT timestamp, open, high, low, close, volume
-        FROM prices
-        WHERE asset_id = ? AND timeframe = ?
-        ORDER BY timestamp
-    """, [asset_id, timeframe])
+    # Check for date range override (e.g., JUP only showing Apr 2025+)
+    min_date = get_asset_date_range(asset_id, "prices")
+
+    if min_date:
+        cursor = conn.execute("""
+            SELECT timestamp, open, high, low, close, volume
+            FROM prices
+            WHERE asset_id = ? AND timeframe = ? AND timestamp >= ?
+            ORDER BY timestamp
+        """, [asset_id, timeframe, min_date])
+    else:
+        cursor = conn.execute("""
+            SELECT timestamp, open, high, low, close, volume
+            FROM prices
+            WHERE asset_id = ? AND timeframe = ?
+            ORDER BY timestamp
+        """, [asset_id, timeframe])
+
+    # Load manual price overrides for this asset/timeframe
+    price_overrides = get_price_overrides(asset_id, timeframe)
 
     candles = []
     seen_timestamps = set()
     duplicates_skipped = 0
     wicks_capped = 0
+    overrides_applied = 0
 
     for row in cursor.fetchall():
         ts, o, h, l, c, v = row
@@ -173,20 +303,37 @@ def export_timeframe(
         if capped_h != h or capped_l != l:
             wicks_capped += 1
 
-        # Compact format for smaller files
-        candles.append({
+        # Build candle object
+        candle = {
             "t": ts_epoch,
             "o": round(o, 8) if o else 0,
             "h": round(capped_h, 8) if capped_h else 0,
             "l": round(capped_l, 8) if capped_l else 0,
             "c": round(c, 8) if c else 0,
             "v": round(v, 2) if v else 0,
-        })
+        }
+
+        # =================================================================
+        # APPLY MANUAL OVERRIDES from data_overrides.json
+        # =================================================================
+        # These are specific fixes that must persist across re-fetches.
+        # See data_overrides.json for documentation of each fix.
+        # =================================================================
+        if ts_epoch in price_overrides:
+            override = price_overrides[ts_epoch]
+            candle = apply_price_override(candle, override)
+            if candle is None:
+                continue  # Skip this candle (excluded)
+            overrides_applied += 1
+
+        candles.append(candle)
 
     if duplicates_skipped > 0:
         print(f"    (Skipped {duplicates_skipped} duplicate timestamps - DST artifacts)")
     if wicks_capped > 0:
         print(f"    (Capped {wicks_capped} fake wicks)")
+    if overrides_applied > 0:
+        print(f"    (Applied {overrides_applied} manual overrides from data_overrides.json)")
 
     if not candles:
         return 0

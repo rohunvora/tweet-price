@@ -1,0 +1,56 @@
+{
+  "$schema": "./data_overrides.schema.json",
+  "version": "1.0.0",
+  "description": "Manual data fixes that must persist across re-fetches and re-exports. DO NOT DELETE entries without understanding why they were added.",
+
+  "price_overrides": {
+    "_comment": "Override specific price candles. Applied during export, NOT stored in DB.",
+    "entries": [
+      {
+        "id": "pump-fake-wick-sept18",
+        "asset_id": "pump",
+        "timeframe": "1h",
+        "timestamp": "2025-09-18T18:00:00Z",
+        "action": "cap_high",
+        "value": 0.009,
+        "reason": "Fake wick from MEV bot/sniper. Original HIGH was ~0.02, 2.5x the close price. Note: DB was also manually fixed, so this is a safety net for re-fetches.",
+        "added": "2024-12-19",
+        "added_by": "manual fix after chart showed spike",
+        "status": "active"
+      }
+    ]
+  },
+
+  "tweet_exclusions": {
+    "_comment": "Exclude specific tweets by ID. These tweets exist in DB but won't be exported.",
+    "entries": []
+  },
+
+  "price_exclusions": {
+    "_comment": "Exclude entire candles from export. Use for bad data that can't be fixed.",
+    "entries": []
+  },
+
+  "asset_data_ranges": {
+    "_comment": "Override the effective data range for an asset (beyond launch_date filter).",
+    "entries": [
+      {
+        "id": "jup-price-cutoff",
+        "asset_id": "jup",
+        "type": "prices",
+        "min_date": "2025-04-01T00:00:00Z",
+        "reason": "Historical price data (Jan 2024 - Mar 2025) is incomplete/unreliable. Chart shows Apr 2025 onwards only.",
+        "added": "2024-12-19",
+        "added_by": "data quality issue - gaps in historical data"
+      }
+    ]
+  },
+
+  "notes": [
+    "This file is the SOURCE OF TRUTH for all manual data fixes.",
+    "Fixes are applied at EXPORT time, not in the database.",
+    "The database contains raw data; this file contains corrections.",
+    "Before deleting ANY entry, understand WHY it was added.",
+    "Run 'python export_static.py' after modifying this file."
+  ]
+}
