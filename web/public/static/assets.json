@@ -8,7 +8,7 @@
       "founder": "a1lon9",
       "network": "solana",
       "launch_date": "2025-07-14T00:00:00Z",
-      "color": "#9945FF",
+      "color": "#22C55E",
       "logo": "/logos/pump.png",
       "enabled": true
     },
@@ -18,7 +18,7 @@
       "founder": "chameleon_jeff",
       "network": "hyperliquid",
       "launch_date": "2024-11-29T00:00:00Z",
-      "color": "#00D1FF",
+      "color": "#5EEAD4",
       "logo": "/logos/hype.png",
       "enabled": true
     },
@@ -39,7 +39,7 @@
       "founder": "pasternak",
       "network": "solana",
       "launch_date": "2025-01-28T00:00:00Z",
-      "color": "#FF6B6B",
+      "color": "#FACC15",
       "logo": "/logos/believe.png",
       "enabled": true
     },
@@ -70,7 +70,7 @@
       "founder": "theunipcs",
       "network": "solana",
       "launch_date": "2025-05-23T00:00:00Z",
-      "color": "#FF4081",
+      "color": "#EAB308",
       "logo": "/logos/useless.png",
       "enabled": true
     }

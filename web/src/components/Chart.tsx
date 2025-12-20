@@ -90,11 +90,11 @@ const COLORS = {
   border: 'rgba(255, 255, 255, 0.08)', // Near-invisible borders
   crosshair: '#52525B',
 
-  // Candlestick colors (muted to not compete with markers)
-  candleUp: 'rgba(34, 197, 94, 0.6)',      // Green, 60% opacity
-  candleDown: 'rgba(239, 68, 68, 0.6)',    // Red, 60% opacity
-  candleBorderUp: 'rgba(34, 197, 94, 0.8)',
-  candleBorderDown: 'rgba(239, 68, 68, 0.8)',
+  // Candlestick colors (heavily muted - background role, not the star)
+  candleUp: 'rgba(34, 197, 94, 0.25)',      // Green, 25% opacity
+  candleDown: 'rgba(239, 68, 68, 0.25)',    // Red, 25% opacity
+  candleBorderUp: 'rgba(34, 197, 94, 0.35)',
+  candleBorderDown: 'rgba(239, 68, 68, 0.35)',
 
   // Default marker colors (overridden by asset.color)
   markerPrimary: '#3B82F6',   // Accent blue
@@ -359,6 +359,45 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
+    // -------------------------------------------------------------------------
+    // Premium multi-layer glow for silence lines
+    // Uses 2 passes: outer atmospheric glow + core line for depth
+    // -------------------------------------------------------------------------
+    const drawSilenceLineWithGlow = (
+      startX: number, startY: number,
+      endX: number, endY: number,
+      color: string  // hex color e.g. "#22C55E" or "rgba(...)"
+    ) => {
+      // Convert rgba to hex if needed for glow suffixing
+      const hexColor = color.startsWith('rgba') 
+        ? (color.includes('239, 83, 80') ? '#EF5350' : '#22C55E')
+        : color;
+      
+      ctx.save();
+      ctx.setLineDash([6, 8]);
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 1.5;
+      
+      // LAYER 1: Outer atmospheric glow (barely visible depth)
+      ctx.shadowColor = hexColor + '12';  // 7% opacity
+      ctx.shadowBlur = 16;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.strokeStyle = 'transparent';
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      
+      // LAYER 2: Core glow + visible line
+      ctx.shadowColor = hexColor + '30';  // 19% opacity
+      ctx.shadowBlur = 6;
+      ctx.strokeStyle = hexColor + '70';  // Line at 44% opacity
+      ctx.stroke();
+      
+      ctx.restore();
+    };
+
     if (!chart || !series || !showTweets) return;
 
     const visibleRange = chart.timeScale().getVisibleRange();
@@ -489,12 +528,10 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     }
 
     // -------------------------------------------------------------------------
-    // Draw gap lines between ALL adjacent clusters
+    // Draw gap lines between ALL adjacent clusters (with premium glow)
     // Labels use adaptive threshold based on visible time range (semantic zoom)
     // -------------------------------------------------------------------------
-    ctx.setLineDash([6, 4]);
-    ctx.lineWidth = 1.5;
-
+    
     // Adaptive label threshold: show labels for "significant" gaps relative to view
     // - Zoomed out (months): 24h gaps are significant
     // - Zoomed in (hours): 30min gaps are significant
@@ -509,8 +546,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       const gap = curr.timeSincePrev ?? 0;
       const pctChange = curr.pctSincePrev;
       const isNegative = pctChange !== null && pctChange < 0;
-
-      ctx.strokeStyle = isNegative ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)';
+      const lineColor = isNegative ? '#EF5350' : '#22C55E';
 
       // Line connects marker edges, not centers
       const startX = prev.x + bubbleRadius + 4;
@@ -520,16 +556,12 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
 
       // Only draw if there's enough visual space for the line
       if (endX > startX + 20) {
-        // Draw dashed line (always, for narrative continuity)
-        ctx.beginPath();
-        ctx.moveTo(startX, prev.y);
-        ctx.lineTo(endX, curr.y);
-        ctx.stroke();
+        // Draw dashed line with premium glow effect
+        drawSilenceLineWithGlow(startX, prev.y, endX, curr.y, lineColor);
 
         // Draw labels for significant gaps (adaptive to zoom level)
         const lineLength = Math.hypot(endX - startX, curr.y - prev.y);
         if (gap > adaptiveLabelThreshold && lineLength > 60) {
-          ctx.setLineDash([]);
 
           // Time gap label
           ctx.font = `${timeFontSize}px system-ui, sans-serif`;
@@ -584,16 +616,10 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
           if (lastX !== null && lastY !== null && latestX !== null && latestY !== null && latestX > lastX + bubbleRadius) {
             const pctChange = ((latestCandle.c - lastPrice) / lastPrice) * 100;
             const isNegative = pctChange < 0;
+            const lineColor = isNegative ? '#EF5350' : '#22C55E';
             
-            // Draw dashed line from last tweet to current price
-            ctx.setLineDash([6, 4]);
-            ctx.lineWidth = 1.5;
-            ctx.strokeStyle = isNegative ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)';
-            ctx.beginPath();
-            ctx.moveTo(lastX + bubbleRadius + 4, lastY);
-            ctx.lineTo(latestX, latestY);
-            ctx.stroke();
-            ctx.setLineDash([]);
+            // Draw dashed line from last tweet to current price (with premium glow)
+            drawSilenceLineWithGlow(lastX + bubbleRadius + 4, lastY, latestX, latestY, lineColor);
             
             // Draw labels if enough space
             const lineLength = Math.hypot(latestX - (lastX + bubbleRadius + 4), latestY - lastY);
@@ -760,6 +786,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       },
       timeScale: {
         borderColor: COLORS.border,
+        textColor: COLORS.textSecondary,  // Visible axis labels
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 5,
@@ -767,6 +794,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       },
       rightPriceScale: {
         borderColor: COLORS.border,
+        textColor: COLORS.textSecondary,  // Visible price labels
         autoScale: true,
         scaleMargins: { top: 0.1, bottom: 0.1 },
       },

@@ -32,6 +32,22 @@ function decodeHtmlEntities(text: string): string {
 }
 
 /**
+ * Smart price formatter - shows appropriate decimal places based on magnitude
+ * - Large prices (>1000): no decimals
+ * - Normal prices (>1): 2 decimals
+ * - Small prices (>0.01): 4 decimals
+ * - Tiny prices (>0.0001): 6 decimals
+ * - Ultra-tiny prices: scientific notation
+ */
+function formatPrice(price: number): string {
+  if (price >= 1000) return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  if (price >= 1) return `$${price.toFixed(2)}`;
+  if (price >= 0.01) return `$${price.toFixed(4)}`;
+  if (price >= 0.0001) return `$${price.toFixed(6)}`;
+  return `$${price.toPrecision(4)}`;
+}
+
+/**
  * Compute tweet day statistics from events
  * Returns avg return and win rate for days with tweets
  */
@@ -160,7 +176,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
         const price = info.getValue();
         return price ? (
           <span className="font-mono text-[var(--text-primary)] text-sm tabular-nums">
-            ${price.toFixed(6)}
+            {formatPrice(price)}
           </span>
         ) : (
           <span className="text-[var(--text-disabled)]">—</span>
