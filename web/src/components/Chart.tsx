@@ -1521,7 +1521,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
               onClick={() => isAvailable && setTimeframe(tf.value)}
               disabled={!isAvailable}
               title={!isAvailable ? `${tf.label} data not available for ${asset.name}` : undefined}
-              className={`px-4 py-2 md:px-2 md:py-1 text-sm md:text-xs font-medium rounded transition-colors ${
+              className={`px-4 py-2 min-h-[44px] md:min-h-0 md:px-2 md:py-1 text-sm md:text-xs font-medium rounded transition-colors ${
                 isActive
                   ? 'text-white'
                   : isAvailable

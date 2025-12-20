@@ -218,8 +218,8 @@ function ChartPageContent() {
         <div className="md:hidden flex-1" />
       </div>
 
-      {/* Chart area */}
-      <div className="flex-1 relative">
+      {/* Chart area - pb-14 on mobile for fixed bottom nav */}
+      <div className="flex-1 relative pb-14 md:pb-0">
         <Chart key={selectedAsset.id} tweetEvents={tweetEvents} asset={selectedAsset} />
       </div>
 
