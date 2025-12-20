@@ -171,8 +171,6 @@ interface TweetClusterDisplay {
  * @param asset - Asset metadata including founder info and theme color
  */
 export default function Chart({ tweetEvents, asset }: ChartProps) {
-  // DEBUG: Remove or gate behind env var for production
-  console.log(`[Chart] Rendering ${asset.name} with ${tweetEvents.length} tweets`);
 
   // ===========================================================================
   // REFS - Mutable values that persist across renders
@@ -290,14 +288,10 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     img.crossOrigin = 'anonymous';  // Required for canvas drawImage
     img.src = `/avatars/${asset.founder}.png`;
     img.onload = () => {
-      // DEBUG: Remove for production
-      console.log(`[Chart] Loaded avatar for ${asset.founder}`);
       avatarRef.current = img;
       setAvatarLoaded(true);
     };
     img.onerror = () => {
-      // DEBUG: Remove for production
-      console.warn(`[Chart] Missing avatar for ${asset.founder}, using fallback`);
       avatarRef.current = null;
       setAvatarLoaded(true);  // Still set true so markers render
     };
@@ -953,12 +947,10 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       // Always include 1d as fallback
       if (available.size === 0) available.add('1d');
 
-      console.log(`[Chart] Available timeframes for ${asset.id}:`, [...available]);
       setAvailableTimeframes(available);
 
       // If current timeframe is not available, switch to 1d
       if (!available.has(timeframe)) {
-        console.log(`[Chart] Timeframe ${timeframe} not available, switching to 1d`);
         setTimeframe('1d');
       }
     }
@@ -987,14 +979,11 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       setDataLoaded(false);
       setNoData(false);
 
-      console.log(`[Chart] Loading ${timeframe} prices for ${asset.id}`);
-
       try {
         const priceData = await loadPrices(timeframe, asset.id);
 
         // Handle empty data gracefully
         if (priceData.candles.length === 0) {
-          console.warn(`[Chart] No candle data for ${asset.id} @ ${timeframe}`);
           setNoData(true);
           setLoading(false);
           return;
@@ -1014,9 +1003,6 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
           const previousRange = chartRef.current.timeScale().getVisibleRange();
 
           const chartData = toCandlestickData(priceData);
-          console.log(`[Chart] Setting ${chartData.length} candles for ${asset.id} @ ${timeframe}`);
-          console.log(`[Chart] First candle:`, chartData[0]);
-          console.log(`[Chart] Last candle:`, chartData[chartData.length - 1]);
           seriesRef.current.setData(chartData as CandlestickData<Time>[]);
 
           if (pendingZoomRef.current) {
