@@ -786,7 +786,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       },
       timeScale: {
         borderColor: COLORS.border,
-        textColor: COLORS.textSecondary,  // Visible axis labels
+        // Note: timeScale inherits textColor from layout.textColor
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 5,
