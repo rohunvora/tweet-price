@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "generated_at": "2025-12-20T00:54:03.082413Z",
+  "generated_at": "2025-12-20T03:07:25.941275Z",
   "assets": [
     {
       "id": "pump",
@@ -8,7 +8,7 @@
       "founder": "a1lon9",
       "network": "solana",
       "launch_date": "2025-07-14T00:00:00Z",
-      "color": "#22C55E",
+      "color": "#9945FF",
       "logo": "/logos/pump.png",
       "enabled": true
     },
@@ -18,7 +18,7 @@
       "founder": "chameleon_jeff",
       "network": "hyperliquid",
       "launch_date": "2024-11-29T00:00:00Z",
-      "color": "#5EEAD4",
+      "color": "#00D1FF",
       "logo": "/logos/hype.png",
       "enabled": true
     },
@@ -39,7 +39,7 @@
       "founder": "pasternak",
       "network": "solana",
       "launch_date": "2025-01-28T00:00:00Z",
-      "color": "#FACC15",
+      "color": "#FF6B6B",
       "logo": "/logos/believe.png",
       "enabled": true
     },
@@ -70,7 +70,7 @@
       "founder": "theunipcs",
       "network": "solana",
       "launch_date": "2025-05-23T00:00:00Z",
-      "color": "#EAB308",
+      "color": "#FF4081",
       "logo": "/logos/useless.png",
       "enabled": true
     }
