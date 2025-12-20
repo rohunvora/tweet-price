@@ -33,12 +33,14 @@ import time
 import httpx
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 from config import (
     ASSETS_FILE,
     X_BEARER_TOKEN,
     X_API_BASE,
     PROJECT_ROOT,
+    LOGOS_DIR,
 )
 
 # ANSI colors for terminal output
@@ -111,6 +113,280 @@ def validate_coingecko_id(cg_id: str) -> tuple[bool, str]:
                 return False, f"CoinGecko API error: {response.status_code}"
     except Exception as e:
         return False, f"Network error: {e}"
+
+
+# =============================================================================
+# DATA SOURCE DISCOVERY - Find source with longest price history
+# =============================================================================
+
+GT_API = "https://api.geckoterminal.com/api/v2"
+CG_API = "https://api.coingecko.com/api/v3"
+
+# Network name mappings for GeckoTerminal
+GT_NETWORK_MAP = {
+    "ethereum": "eth",
+    "base": "base",
+    "solana": "solana",
+    "bsc": "bsc",
+    "arbitrum": "arbitrum-one",
+    "polygon": "polygon_pos",
+    "optimism": "optimism",
+    "avalanche": "avax",
+}
+
+
+def get_coingecko_info(cg_id: str) -> Optional[dict]:
+    """Get full CoinGecko coin info including platforms/addresses."""
+    url = f"{CG_API}/coins/{cg_id}"
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(url)
+            if response.status_code == 200:
+                return response.json()
+    except Exception:
+        pass
+    return None
+
+
+def probe_coingecko_history(cg_id: str) -> dict:
+    """
+    Probe CoinGecko to find the oldest available price data.
+    Returns dict with 'days_available', 'oldest_date', 'source'.
+    """
+    result = {
+        "source": "coingecko",
+        "coingecko_id": cg_id,
+        "days_available": 0,
+        "oldest_date": None,
+        "error": None,
+    }
+
+    # CoinGecko market_chart endpoint with max days
+    url = f"{CG_API}/coins/{cg_id}/market_chart"
+    params = {"vs_currency": "usd", "days": "max"}
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(url, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                prices = data.get("prices", [])
+                if prices:
+                    oldest_ts = prices[0][0] / 1000  # CoinGecko uses milliseconds
+                    newest_ts = prices[-1][0] / 1000
+                    oldest_date = datetime.utcfromtimestamp(oldest_ts)
+                    days = (newest_ts - oldest_ts) / 86400
+                    result["days_available"] = int(days)
+                    result["oldest_date"] = oldest_date.strftime("%Y-%m-%d")
+            elif response.status_code == 429:
+                result["error"] = "Rate limited"
+            else:
+                result["error"] = f"HTTP {response.status_code}"
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+def discover_geckoterminal_pools(token_address: str, network: str) -> list[dict]:
+    """
+    Search GeckoTerminal for pools containing this token on a specific network.
+    Returns list of pool info dicts.
+    """
+    gt_network = GT_NETWORK_MAP.get(network, network)
+    url = f"{GT_API}/networks/{gt_network}/tokens/{token_address}/pools"
+    params = {"page": 1}
+
+    pools = []
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(url, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                for pool in data.get("data", [])[:5]:  # Top 5 pools by liquidity
+                    attrs = pool.get("attributes", {})
+                    pools.append({
+                        "address": attrs.get("address"),
+                        "name": attrs.get("name"),
+                        "network": network,
+                        "gt_network": gt_network,
+                        "liquidity_usd": float(attrs.get("reserve_in_usd") or 0),
+                    })
+    except Exception:
+        pass
+
+    return pools
+
+
+def probe_geckoterminal_history(network: str, pool_address: str) -> dict:
+    """
+    Probe GeckoTerminal to find the oldest available OHLCV data for a pool.
+    Returns dict with 'days_available', 'oldest_date', 'source'.
+    """
+    gt_network = GT_NETWORK_MAP.get(network, network)
+    result = {
+        "source": "geckoterminal",
+        "network": network,
+        "pool_address": pool_address,
+        "days_available": 0,
+        "oldest_date": None,
+        "error": None,
+        "paywall_hit": False,
+    }
+
+    # Probe with daily candles going back in time
+    url = f"{GT_API}/networks/{gt_network}/pools/{pool_address}/ohlcv/day"
+
+    # Binary search to find oldest data - start with current time
+    now_ts = int(datetime.utcnow().timestamp())
+    oldest_found = now_ts
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            # First request to get recent data
+            params = {"aggregate": 1, "limit": 1000}
+            response = client.get(url, params=params)
+
+            if response.status_code == 200:
+                data = response.json()
+                ohlcv = data.get("data", {}).get("attributes", {}).get("ohlcv_list", [])
+                if ohlcv:
+                    # ohlcv_list is [timestamp, o, h, l, c, v] sorted newest first
+                    oldest_found = ohlcv[-1][0]
+
+                    # Try to go further back with before_timestamp
+                    for _ in range(5):  # Max 5 pages back
+                        time.sleep(0.3)  # Rate limiting
+                        params["before_timestamp"] = oldest_found
+                        response = client.get(url, params=params)
+
+                        if response.status_code == 401:
+                            result["paywall_hit"] = True
+                            break
+                        elif response.status_code == 200:
+                            data = response.json()
+                            ohlcv = data.get("data", {}).get("attributes", {}).get("ohlcv_list", [])
+                            if not ohlcv:
+                                break
+                            new_oldest = ohlcv[-1][0]
+                            if new_oldest >= oldest_found:
+                                break
+                            oldest_found = new_oldest
+                        else:
+                            break
+
+                    oldest_date = datetime.utcfromtimestamp(oldest_found)
+                    days = (now_ts - oldest_found) / 86400
+                    result["days_available"] = int(days)
+                    result["oldest_date"] = oldest_date.strftime("%Y-%m-%d")
+
+            elif response.status_code == 401:
+                result["paywall_hit"] = True
+                result["error"] = "180-day paywall"
+            else:
+                result["error"] = f"HTTP {response.status_code}"
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+def discover_best_price_source(cg_id: str) -> list[dict]:
+    """
+    Given a CoinGecko ID, discover all available price sources and probe their history.
+    Returns list of source options sorted by days_available (most history first).
+    """
+    sources = []
+
+    print(f"  Discovering price sources for '{cg_id}'...")
+
+    # 1. Get CoinGecko info (includes platform addresses)
+    cg_info = get_coingecko_info(cg_id)
+    if not cg_info:
+        print_warning(f"  Could not fetch CoinGecko info")
+        return sources
+
+    platforms = cg_info.get("platforms", {})
+
+    # 2. Probe CoinGecko history
+    print(f"  Probing CoinGecko...")
+    cg_result = probe_coingecko_history(cg_id)
+    if cg_result["days_available"] > 0:
+        sources.append(cg_result)
+        print(f"    CoinGecko: {cg_result['days_available']} days (since {cg_result['oldest_date']})")
+    else:
+        print(f"    CoinGecko: {cg_result.get('error', 'No data')}")
+
+    # 3. For each platform, find GeckoTerminal pools
+    for platform, address in platforms.items():
+        if not address or platform not in GT_NETWORK_MAP:
+            continue
+
+        print(f"  Searching {platform} pools...")
+        time.sleep(0.3)  # Rate limiting
+
+        pools = discover_geckoterminal_pools(address, platform)
+        if not pools:
+            print(f"    No pools found on {platform}")
+            continue
+
+        # Probe the top pool by liquidity
+        top_pool = max(pools, key=lambda p: p["liquidity_usd"])
+        print(f"    Found pool: {top_pool['name']} (${top_pool['liquidity_usd']:,.0f} liq)")
+
+        time.sleep(0.3)
+        gt_result = probe_geckoterminal_history(platform, top_pool["address"])
+        gt_result["token_address"] = address
+        gt_result["pool_name"] = top_pool["name"]
+        gt_result["liquidity_usd"] = top_pool["liquidity_usd"]
+
+        if gt_result["days_available"] > 0:
+            sources.append(gt_result)
+            paywall_note = " (paywall hit)" if gt_result["paywall_hit"] else ""
+            print(f"    GeckoTerminal/{platform}: {gt_result['days_available']} days (since {gt_result['oldest_date']}){paywall_note}")
+        else:
+            print(f"    GeckoTerminal/{platform}: {gt_result.get('error', 'No data')}")
+
+    # Sort by days available (most history first)
+    sources.sort(key=lambda x: x["days_available"], reverse=True)
+
+    return sources
+
+
+def print_source_recommendations(sources: list[dict], launch_date: str = None):
+    """Print a formatted comparison of discovered price sources."""
+    if not sources:
+        print_warning("  No price sources found!")
+        return
+
+    print(f"\n  {'Source':<25} {'Network':<12} {'History':<12} {'Oldest Date':<12}")
+    print(f"  {'-'*25} {'-'*12} {'-'*12} {'-'*12}")
+
+    for i, src in enumerate(sources):
+        if src["source"] == "coingecko":
+            name = "CoinGecko"
+            network = "-"
+        else:
+            name = f"GeckoTerminal"
+            network = src.get("network", "?")
+
+        days = src["days_available"]
+        oldest = src.get("oldest_date", "?")
+
+        # Mark the recommended source
+        marker = f"{GREEN}★{RESET}" if i == 0 else " "
+        print(f"  {marker} {name:<23} {network:<12} {days:>4} days    {oldest}")
+
+    # Check coverage against launch date
+    if launch_date and sources:
+        best = sources[0]
+        launch_dt = datetime.strptime(launch_date[:10], "%Y-%m-%d")
+        oldest_dt = datetime.strptime(best["oldest_date"], "%Y-%m-%d")
+
+        if oldest_dt > launch_dt:
+            gap_days = (oldest_dt - launch_dt).days
+            print_warning(f"\n  Best source still missing {gap_days} days from launch ({launch_date[:10]})")
 
 
 def load_assets() -> dict:
@@ -237,6 +513,8 @@ Examples:
     parser.add_argument("--dry-run", action="store_true", help="Validate only, don't add or fetch")
     parser.add_argument("--skip-tweets", action="store_true", help="Skip tweet fetching")
     parser.add_argument("--skip-prices", action="store_true", help="Skip price fetching")
+    parser.add_argument("--discover", action="store_true", help="Discover best price source (probe all available sources)")
+    parser.add_argument("--auto-best", action="store_true", help="Automatically use the best discovered source")
 
     args = parser.parse_args()
 
@@ -300,7 +578,42 @@ Examples:
                 sys.exit(1)
             print_success(f"  Pool: {args.pool_address[:20]}... on {args.network}")
 
-    if args.dry_run:
+    # Data source discovery (when --discover or --auto-best)
+    discovered_sources = []
+    best_source = None
+
+    if (args.discover or args.auto_best) and args.coingecko_id and not args.refresh:
+        print_step("Discovering price sources")
+        discovered_sources = discover_best_price_source(args.coingecko_id)
+        print_source_recommendations(discovered_sources, args.launch_date)
+
+        if discovered_sources:
+            best_source = discovered_sources[0]
+
+            if args.auto_best and best_source["source"] == "geckoterminal":
+                # Override args with best source
+                print(f"\n  {GREEN}Auto-selecting best source: GeckoTerminal/{best_source['network']}{RESET}")
+                args.network = best_source["network"]
+                args.pool_address = best_source["pool_address"]
+                if "token_address" in best_source:
+                    args.token_mint = best_source["token_address"]
+            elif args.auto_best and best_source["source"] == "coingecko":
+                print(f"\n  {GREEN}Auto-selecting best source: CoinGecko{RESET}")
+                # CoinGecko is already the default when only coingecko_id is provided
+
+    if args.dry_run or args.discover:
+        if args.discover and not args.dry_run:
+            print_success("\nDiscovery complete!")
+            if discovered_sources:
+                best = discovered_sources[0]
+                if best["source"] == "geckoterminal":
+                    print(f"\nTo use the best source, run:")
+                    print(f"  python add_asset.py {args.asset_id} --name \"{args.name}\" --founder {args.founder} \\")
+                    print(f"    --coingecko {args.coingecko_id} --network {best['network']} --pool {best['pool_address']}")
+                    if args.launch_date:
+                        print(f"    --launch-date {args.launch_date}")
+                print(f"\nOr use --auto-best to automatically select the best source.")
+            sys.exit(0)
         print_success("\nDry run complete - validation passed!")
         print("Run without --dry-run to add the asset and fetch data.")
         sys.exit(0)

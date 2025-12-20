@@ -1467,9 +1467,9 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       <div className="absolute top-2 left-2 z-20 hidden md:flex items-center gap-2">
         <button
           onClick={() => setShowBubbles(!showBubbles)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs transition-colors ${
-            showBubbles 
-              ? 'bg-[var(--surface-2)] text-white border border-[var(--border-default)]' 
+          className={`flex items-center gap-2 px-3 py-2 min-h-[44px] rounded text-xs transition-colors ${
+            showBubbles
+              ? 'bg-[var(--surface-2)] text-white border border-[var(--border-default)]'
               : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
           }`}
         >
@@ -1480,13 +1480,13 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         <div className="flex items-center gap-1 ml-2">
           <button
             onClick={jumpToLastTweet}
-            className="px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
+            className="px-3 py-2 min-h-[44px] text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
           >
             Last Tweet
           </button>
           <button
             onClick={jumpToAllTime}
-            className="px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
+            className="px-3 py-2 min-h-[44px] text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
           >
             All Time
           </button>
@@ -1512,7 +1512,7 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
               onClick={() => isAvailable && setTimeframe(tf.value)}
               disabled={!isAvailable}
               title={!isAvailable ? `${tf.label} data not available for ${asset.name}` : undefined}
-              className={`px-4 py-2 md:px-2 md:py-1 text-sm md:text-xs font-medium rounded transition-colors ${
+              className={`px-4 py-2.5 min-h-[44px] md:px-2 md:py-1 md:min-h-0 text-sm md:text-xs font-medium rounded transition-colors ${
                 isActive
                   ? 'text-white'
                   : isAvailable

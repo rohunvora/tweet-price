@@ -88,7 +88,7 @@ export default function AssetSelector({ assets, selectedAsset, onSelect }: Asset
       <button
         onClick={() => setIsOpen(!isOpen)}
         onKeyDown={handleKeyDown}
-        className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-2)] hover:bg-[var(--surface-3)] rounded-lg transition-all interactive"
+        className="flex items-center gap-2 px-3 py-2 min-h-[44px] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] rounded-lg transition-all interactive"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >

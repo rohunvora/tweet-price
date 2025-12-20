@@ -200,24 +200,24 @@ function ChartPageContent() {
         
         {/* Navigation - desktop only */}
         <div className="hidden md:flex items-center gap-1 ml-auto">
-          <Link 
+          <Link
             href={`/chart?asset=${selectedAsset.id}`}
-            className="px-3 py-1.5 text-xs font-medium bg-[var(--accent)] text-white rounded-md interactive"
+            className="px-3 py-2 min-h-[44px] flex items-center text-xs font-medium bg-[var(--accent)] text-white rounded-md interactive"
           >
             Chart
           </Link>
-          <Link 
+          <Link
             href={`/data?asset=${selectedAsset.id}`}
-            className="px-3 py-1.5 text-xs font-medium bg-[var(--surface-2)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md interactive"
+            className="px-3 py-2 min-h-[44px] flex items-center text-xs font-medium bg-[var(--surface-2)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md interactive"
           >
             Data Table
           </Link>
         </div>
         
         {/* Mobile: Data link */}
-        <Link 
+        <Link
           href={`/data?asset=${selectedAsset.id}`}
-          className="md:hidden ml-auto px-3 py-2 text-sm text-[var(--text-secondary)] interactive rounded-md"
+          className="md:hidden ml-auto px-3 py-2.5 min-h-[44px] flex items-center text-sm text-[var(--text-secondary)] interactive rounded-md"
         >
           Data
         </Link>

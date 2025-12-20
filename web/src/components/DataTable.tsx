@@ -127,11 +127,11 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
           placeholder="Search tweets..."
           value={globalFilter}
           onChange={e => setGlobalFilter(e.target.value)}
-          className="flex-1 px-3 py-2 bg-[var(--surface-1)] border border-[var(--border-default)] rounded-lg text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] text-sm"
+          className="flex-1 px-3 py-2 bg-[var(--surface-1)] border border-[var(--border-default)] rounded-lg text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] text-base"
         />
         <button
           onClick={() => exportToCSV(events, founder, assetName)}
-          className="px-3 py-2 bg-[var(--surface-1)] border border-[var(--border-default)] text-[var(--text-secondary)] rounded-lg hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors text-sm whitespace-nowrap"
+          className="px-3 py-2.5 min-h-[44px] bg-[var(--surface-1)] border border-[var(--border-default)] text-[var(--text-secondary)] rounded-lg hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors text-sm whitespace-nowrap"
         >
           Export CSV
         </button>
@@ -149,7 +149,7 @@ export default function DataTable({ events, founder, assetName }: DataTableProps
             else if (val === 'biggest-gain') setSorting([{ id: 'change_24h_pct', desc: true }]);
             else if (val === 'biggest-drop') setSorting([{ id: 'change_24h_pct', desc: false }]);
           }}
-          className="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1 text-[var(--text-primary)] text-xs focus:outline-none focus:border-[var(--accent)]"
+          className="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none focus:border-[var(--accent)] min-h-[44px]"
         >
           <option value="latest">Latest</option>
           <option value="oldest">Oldest</option>

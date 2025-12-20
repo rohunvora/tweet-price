@@ -33,7 +33,7 @@
    * --------------------------------------------------------------------------- */
   --text-primary: #FAFAFA;     /* Hero numbers, headings */
   --text-secondary: #A1A1AA;   /* Labels, descriptions */
-  --text-muted: #71717A;       /* Timestamps, tertiary info */
+  --text-muted: #7F7F82;       /* Timestamps, tertiary info - WCAG AA 4.5:1 */
   --text-disabled: #52525B;    /* Disabled states */
   
   /* ---------------------------------------------------------------------------
