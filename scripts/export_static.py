@@ -211,16 +211,21 @@ def export_prices_for_asset(
     output_dir.mkdir(parents=True, exist_ok=True)
     stats = {}
     
-    # Get asset launch date to check if we should skip 1m
+    # Get asset config to check for skip_timeframes and launch_date
+    from config import load_assets_config
+    assets_config = load_assets_config()
+    asset_config = next((a for a in assets_config if a["id"] == asset_id), {})
+    skip_timeframes = set(asset_config.get("skip_timeframes", []))
+
+    # Also skip 1m for older assets to reduce bloat
     asset_info = conn.execute("""
         SELECT launch_date FROM assets WHERE id = ?
     """, [asset_id]).fetchone()
-    
-    skip_1m = False
+
     if asset_info and asset_info[0]:
         days_old = (datetime.utcnow() - asset_info[0]).days
         if days_old > skip_1m_if_older_than_days:
-            skip_1m = True
+            skip_timeframes.add("1m")
             print(f"    (Skipping 1m data - asset is {days_old} days old)")
     
     # Get available timeframes for this asset
@@ -232,14 +237,17 @@ def export_prices_for_asset(
     timeframes = [t[0] for t in timeframes]
     
     for tf in timeframes:
+        if tf in skip_timeframes:
+            if tf not in ("1m",):  # 1m skip already logged above
+                print(f"    (Skipping {tf} data - in skip_timeframes)")
+            continue
+
         if tf == "1m":
-            if skip_1m:
-                continue
             # Export 1m data chunked by month
             count = export_1m_chunked(conn, asset_id, output_dir)
         else:
             count = export_timeframe(conn, asset_id, tf, output_dir)
-        
+
         if count > 0:
             stats[tf] = count
     

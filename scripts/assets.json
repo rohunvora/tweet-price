@@ -33,7 +33,8 @@
       "enabled": true,
       "logo": "/logos/hype.png",
       "keyword_filter": "hype,hyperliquid",
-      "data_note": "15m data unavailable - CoinGecko only supports 1h/1d, Hyperliquid API doesn't retain historical 15m"
+      "data_note": "15m data unavailable - CoinGecko only supports 1h/1d, Hyperliquid API doesn't retain historical 15m",
+      "skip_timeframes": ["15m", "1m"]
     },
     {
       "id": "aster",
