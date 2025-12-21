@@ -83,8 +83,8 @@
       "color": "#19FB9B",
       "enabled": true,
       "logo": "/logos/jup.png",
-      "data_note": "Chart shows Apr 2025 onwards. Historical tweets (Jan 2024-Mar 2025) collected but no matching price data available.",
-      "keyword_filter": "jup,jupiter"
+      "keyword_filter": "jup,jupiter",
+      "skip_timeframes": ["15m", "1m"]
     },
     {
       "id": "monad",

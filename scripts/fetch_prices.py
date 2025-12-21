@@ -45,10 +45,8 @@ BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY")
 
 MAX_CANDLES_PER_REQUEST = 1000
 
-# Age-based timeframe skipping thresholds
-# WHY: Fetching 1m data for a 1-year-old asset = 525,600 candles = 4+ hours. Not practical.
-SKIP_1M_AFTER_DAYS = 90      # Skip 1m for assets older than 90 days
-SKIP_15M_AFTER_DAYS = 365    # Skip 15m for assets older than 365 days
+# Age-based timeframe skipping thresholds (imported from config.py)
+from config import SKIP_1M_AFTER_DAYS, SKIP_15M_AFTER_DAYS
 
 # Priority order for Birdeye fetches: get usable data fast
 # 1d first (few hundred candles), then 1h, then granular if asset is young enough

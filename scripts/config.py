@@ -41,6 +41,11 @@ PUMP_POOL_ADDRESS = "2uF4Xh61rDwxnG9woyxsVQP7zuA6kLFpb3NvnRQeoiSd"
 # Supported timeframes
 TIMEFRAMES = ["1m", "15m", "1h", "1d"]
 
+# Age-based timeframe skipping thresholds
+# Assets older than these thresholds don't get granular data (API limitations + storage)
+SKIP_1M_AFTER_DAYS = 90      # Skip 1m for assets older than 90 days
+SKIP_15M_AFTER_DAYS = 365    # Skip 15m for assets older than 365 days
+
 # GeckoTerminal API mapping
 TIMEFRAME_TO_GT = {
     "1m": ("minute", 1),

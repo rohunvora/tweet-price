@@ -322,9 +322,12 @@ def validate_asset(conn, asset_id: str) -> Tuple[bool, List[ValidationResult]]:
     Run all validation checks for an asset.
 
     Returns (all_passed, list_of_results)
+
+    Respects skip_timeframes from assets.json and auto-skips based on age.
     """
-    # Check if asset has documented data limitations (from assets.json)
-    from config import ASSETS_FILE
+    from config import ASSETS_FILE, SKIP_1M_AFTER_DAYS, SKIP_15M_AFTER_DAYS
+
+    # Load asset config
     with open(ASSETS_FILE) as f:
         assets_config = json.load(f)
     asset_config = next((a for a in assets_config.get("assets", []) if a["id"] == asset_id), None)
@@ -337,11 +340,32 @@ def validate_asset(conn, asset_id: str) -> Tuple[bool, List[ValidationResult]]:
             f"Skipped (data_note: {note[:60]}...)"
         )]
 
+    # Get skip_timeframes from config + auto-skip based on age
+    skip_timeframes = set(asset_config.get("skip_timeframes", []) if asset_config else [])
+
+    # Calculate asset age for auto-skip
+    if asset_config and asset_config.get("launch_date"):
+        from datetime import timezone
+        launch_str = asset_config["launch_date"]
+        launch_date = datetime.fromisoformat(launch_str.replace("Z", "+00:00"))
+        days_old = (datetime.now(timezone.utc) - launch_date).days
+
+        # Auto-skip based on age (same thresholds as fetch/export)
+        if days_old > SKIP_1M_AFTER_DAYS:
+            skip_timeframes.add("1m")
+        if days_old > SKIP_15M_AFTER_DAYS:
+            skip_timeframes.add("15m")
+
     asset_dir = PUBLIC_DATA_DIR / asset_id
     results = []
 
     # Price validations for each timeframe
     for tf in ["1d", "1h", "15m"]:
+        # Skip validation for intentionally skipped timeframes
+        if tf in skip_timeframes:
+            results.append(ValidationResult(True, f"{tf}: skipped (in skip_timeframes)"))
+            continue
+
         price_file = asset_dir / f"prices_{tf}.json"
         results.append(validate_price_count(conn, asset_id, tf, price_file))
         results.append(validate_price_range(conn, asset_id, tf, price_file))

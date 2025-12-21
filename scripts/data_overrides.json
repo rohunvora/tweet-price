@@ -33,17 +33,7 @@
 
   "asset_data_ranges": {
     "_comment": "Override the effective data range for an asset (beyond launch_date filter).",
-    "entries": [
-      {
-        "id": "jup-price-cutoff",
-        "asset_id": "jup",
-        "type": "prices",
-        "min_date": "2025-04-01T00:00:00Z",
-        "reason": "Historical price data (Jan 2024 - Mar 2025) is incomplete/unreliable. Chart shows Apr 2025 onwards only.",
-        "added": "2024-12-19",
-        "added_by": "data quality issue - gaps in historical data"
-      }
-    ]
+    "entries": []
   },
 
   "notes": [

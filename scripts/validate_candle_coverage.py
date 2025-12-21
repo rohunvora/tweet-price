@@ -33,6 +33,9 @@ INTERVALS = {
 # Coverage threshold (95% required)
 COVERAGE_THRESHOLD = 0.95
 
+# Import age-based skip thresholds from config
+from config import SKIP_1M_AFTER_DAYS, SKIP_15M_AFTER_DAYS
+
 
 def load_asset_config(asset_id: str) -> Optional[dict]:
     """Load asset config from assets.json"""
@@ -211,10 +214,31 @@ def validate_asset(asset_id: str, verbose: bool = False) -> bool:
     print(f"Days Since:  {days_since_launch}")
     print()
 
+    # Get skip_timeframes from asset config + auto-skip based on age
+    skip_timeframes = set(asset.get("skip_timeframes", []))
+
+    # Auto-skip based on asset age (same thresholds as fetch_prices.py and export_static.py)
+    if days_since_launch > SKIP_1M_AFTER_DAYS:
+        skip_timeframes.add("1m")
+    if days_since_launch > SKIP_15M_AFTER_DAYS:
+        skip_timeframes.add("15m")
+
     # Validate each timeframe
     results = {}
     for tf in ["1d", "1h", "15m"]:
-        results[tf] = validate_timeframe(asset_id, tf, launch_date, now, verbose)
+        if tf in skip_timeframes:
+            results[tf] = {
+                "expected": 0,
+                "actual": 0,
+                "coverage": 1.0,
+                "status": "SKIP",
+                "gaps": [],
+                "first_candle_date": None,
+                "pre_launch_data": False,
+                "issues": [],
+            }
+        else:
+            results[tf] = validate_timeframe(asset_id, tf, launch_date, now, verbose)
 
     # Print summary table
     print(f"{'Timeframe':<10} {'Expected':>10} {'Actual':>10} {'Coverage':>10} {'Status':>8}")
@@ -252,7 +276,9 @@ def validate_asset(asset_id: str, verbose: bool = False) -> bool:
     print(f"\nFirst Candle Dates:")
     for tf in ["1d", "1h", "15m"]:
         r = results[tf]
-        if r["first_candle_date"]:
+        if r["status"] == "SKIP":
+            print(f"  {tf}: Skipped (in skip_timeframes)")
+        elif r["first_candle_date"]:
             status_marker = " (BEFORE LAUNCH!)" if r["pre_launch_data"] else ""
             print(f"  {tf}: {r['first_candle_date'].strftime('%Y-%m-%d %H:%M')}{status_marker}")
         else:

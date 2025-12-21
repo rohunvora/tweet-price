@@ -198,35 +198,47 @@ def export_prices_for_asset(
     conn,
     asset_id: str,
     output_dir: Path,
-    skip_1m_if_older_than_days: int = 180
 ) -> Dict[str, int]:
     """
     Export price data for a single asset.
-    
-    Args:
-        skip_1m_if_older_than_days: Skip 1m export if asset launched > N days ago (reduces bloat)
-    
+
+    Uses age-based thresholds from config.py to auto-skip granular timeframes.
+    Also respects skip_timeframes from assets.json.
+    Deletes old files for skipped timeframes.
+
     Returns dict of timeframe -> candle count.
     """
+    from config import SKIP_1M_AFTER_DAYS, SKIP_15M_AFTER_DAYS
+
     output_dir.mkdir(parents=True, exist_ok=True)
     stats = {}
-    
-    # Get asset config to check for skip_timeframes and launch_date
-    from config import load_assets_config
-    assets_config = load_assets_config()
-    asset_config = next((a for a in assets_config if a["id"] == asset_id), {})
+
+    # Get asset config to check for skip_timeframes
+    with open(ASSETS_FILE) as f:
+        assets_data = json.load(f)
+    asset_config = next((a for a in assets_data.get("assets", []) if a["id"] == asset_id), {})
     skip_timeframes = set(asset_config.get("skip_timeframes", []))
 
-    # Also skip 1m for older assets to reduce bloat
+    # Auto-skip based on asset age (same thresholds as fetch_prices.py)
     asset_info = conn.execute("""
         SELECT launch_date FROM assets WHERE id = ?
     """, [asset_id]).fetchone()
 
     if asset_info and asset_info[0]:
         days_old = (datetime.utcnow() - asset_info[0]).days
-        if days_old > skip_1m_if_older_than_days:
+        if days_old > SKIP_1M_AFTER_DAYS and "1m" not in skip_timeframes:
             skip_timeframes.add("1m")
-            print(f"    (Skipping 1m data - asset is {days_old} days old)")
+            print(f"    (Skipping 1m data - asset is {days_old} days old, threshold: {SKIP_1M_AFTER_DAYS}d)")
+        if days_old > SKIP_15M_AFTER_DAYS and "15m" not in skip_timeframes:
+            skip_timeframes.add("15m")
+            print(f"    (Skipping 15m data - asset is {days_old} days old, threshold: {SKIP_15M_AFTER_DAYS}d)")
+
+    # Delete existing files for skipped timeframes
+    for tf in skip_timeframes:
+        old_file = output_dir / f"prices_{tf}.json"
+        if old_file.exists():
+            old_file.unlink()
+            print(f"    (Deleted old {tf} file)")
     
     # Get available timeframes for this asset
     timeframes = conn.execute("""
@@ -238,8 +250,7 @@ def export_prices_for_asset(
     
     for tf in timeframes:
         if tf in skip_timeframes:
-            if tf not in ("1m",):  # 1m skip already logged above
-                print(f"    (Skipping {tf} data - in skip_timeframes)")
+            # Already logged above when added to skip_timeframes
             continue
 
         if tf == "1m":
