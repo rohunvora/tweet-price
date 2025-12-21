@@ -59,3 +59,14 @@ TIMEFRAME_TO_BIRDEYE = {
     "1h": "1H",
     "1d": "1D",
 }
+
+# CoinGecko API key (for multi-chain historical data)
+# Basic plan ($35/mo) gives 1 year hourly data
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY")
+COINGECKO_API_BASE = "https://pro-api.coingecko.com/api/v3"
+
+# CoinGecko interval mapping (for paid API interval parameter)
+TIMEFRAME_TO_COINGECKO = {
+    "1h": "hourly",
+    "1d": "daily",
+}

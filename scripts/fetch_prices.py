@@ -455,6 +455,206 @@ def fetch_birdeye_all_timeframes(
 
 
 # =============================================================================
+# COINGECKO FETCHER (Paid API)
+# =============================================================================
+#
+# CoinGecko paid API provides hourly historical data for any listed coin.
+# Basic plan ($35/mo) gives 1 year of hourly data.
+# Useful for:
+# - Non-Solana chains (HYPE on Hyperliquid, EVM chains without DEX pools)
+# - CEX-only tokens
+# - Backup/validation data source
+#
+# API docs: https://docs.coingecko.com/reference/coins-id-ohlc-range
+# =============================================================================
+
+# CoinGecko API key from environment
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY")
+COINGECKO_API_BASE = "https://pro-api.coingecko.com/api/v3"
+
+# CoinGecko interval mapping
+CG_INTERVALS = {
+    "1h": "hourly",
+    "1d": "daily",
+}
+
+
+def fetch_coingecko_ohlcv(
+    coingecko_id: str,
+    timeframe: str,
+    time_from: int,
+    time_to: int
+) -> List[Dict]:
+    """
+    Fetch OHLCV data from CoinGecko API (paid) using /ohlc/range endpoint.
+
+    Args:
+        coingecko_id: CoinGecko coin ID (e.g., 'hyperliquid', 'bitcoin')
+        timeframe: '1h' or '1d'
+        time_from: Start timestamp (Unix seconds)
+        time_to: End timestamp (Unix seconds)
+
+    Returns list of candles with proper OHLC data at regular intervals.
+
+    Limits per request:
+    - Hourly: max 31 days (744 candles)
+    - Daily: max 180 days
+    """
+    if not COINGECKO_API_KEY:
+        raise ValueError("COINGECKO_API_KEY environment variable is required for CoinGecko API calls")
+
+    if timeframe not in CG_INTERVALS:
+        print(f"      CoinGecko does not support {timeframe} interval, skipping", flush=True)
+        return []
+
+    # Use /ohlc/range endpoint for proper OHLC candles at regular intervals
+    url = f"{COINGECKO_API_BASE}/coins/{coingecko_id}/ohlc/range"
+
+    params = {
+        "vs_currency": "usd",
+        "from": time_from,
+        "to": time_to,
+        "interval": CG_INTERVALS[timeframe],  # "hourly" or "daily"
+    }
+
+    headers = {
+        "x-cg-pro-api-key": COINGECKO_API_KEY,
+        "accept": "application/json",
+    }
+
+    with httpx.Client(timeout=60.0) as client:
+        response = client.get(url, params=params, headers=headers)
+
+        if response.status_code == 429:
+            print("      Rate limited by CoinGecko, waiting 60s...", flush=True)
+            time.sleep(60)
+            return fetch_coingecko_ohlcv(coingecko_id, timeframe, time_from, time_to)
+
+        if response.status_code != 200:
+            print(f"      CoinGecko error {response.status_code}: {response.text[:200]}", flush=True)
+            return []
+
+        data = response.json()
+
+        if not data:
+            return []
+
+        # /ohlc/range returns [[timestamp_ms, open, high, low, close], ...]
+        # These are proper OHLC candles at regular intervals (hourly/daily)
+        candles = []
+        for candle in data:
+            ts_ms, o, h, l, c = candle
+            ts_sec = int(ts_ms / 1000)
+
+            candles.append({
+                "timestamp_epoch": ts_sec,
+                "open": float(o),
+                "high": float(h),
+                "low": float(l),
+                "close": float(c),
+                "volume": 0.0,  # OHLC endpoint doesn't include volume
+            })
+
+        return candles
+
+
+def fetch_coingecko_all_timeframes(
+    coingecko_id: str,
+    launch_timestamp: int,
+    timeframes: List[str] = None,
+    conn=None,
+    asset_id: str = None,
+    fresh: bool = False
+) -> Dict[str, List[Dict]]:
+    """
+    Fetch all timeframes for a CoinGecko coin.
+
+    Args:
+        coingecko_id: CoinGecko coin ID
+        launch_timestamp: Don't fetch data before this time
+        timeframes: List of timeframes to fetch (default: ['1h', '1d'])
+        conn: Optional DB connection for progressive saving
+        asset_id: Required if conn provided
+        fresh: If True, ignore existing data and fetch from launch
+    """
+    if timeframes is None:
+        timeframes = ["1h", "1d"]  # CoinGecko only supports hourly and daily
+
+    # Filter to only supported timeframes
+    supported_tfs = [tf for tf in timeframes if tf in CG_INTERVALS]
+
+    results = {}
+    now_ts = int(datetime.utcnow().timestamp())
+
+    for tf in supported_tfs:
+        print(f"    Fetching {tf} data from CoinGecko...", flush=True)
+
+        # Determine start time
+        if conn and asset_id and not fresh:
+            # Check for existing data to avoid re-fetching
+            from db import get_latest_price_timestamp
+            latest_ts = get_latest_price_timestamp(conn, asset_id, tf)
+            if latest_ts:
+                # Start from 1 hour/day after latest to avoid duplicates
+                delta = 3600 if tf == "1h" else 86400
+                start_ts = int(latest_ts.timestamp()) + delta
+                if start_ts >= now_ts:
+                    print(f"      Already up to date", flush=True)
+                    results[tf] = []
+                    continue
+            else:
+                start_ts = launch_timestamp
+        else:
+            start_ts = launch_timestamp
+
+        # CoinGecko /ohlc/range limits:
+        # - Hourly: max 31 days per request
+        # - Daily: max 180 days per request
+        chunk_days = 30 if tf == "1h" else 180
+        chunk_seconds = chunk_days * 86400
+
+        all_candles = []
+        current_start = start_ts
+        total_inserted = 0
+
+        while current_start < now_ts:
+            current_end = min(current_start + chunk_seconds, now_ts)
+
+            candles = fetch_coingecko_ohlcv(coingecko_id, tf, current_start, current_end)
+
+            if candles:
+                all_candles.extend(candles)
+
+                # Progressive save if connection provided
+                if conn and asset_id:
+                    inserted = insert_prices(conn, asset_id, tf, candles, data_source="coingecko")
+                    total_inserted += inserted
+                    print(f"      Chunk {current_start} to {current_end}: {len(candles)} candles ({inserted} new)", flush=True)
+                else:
+                    print(f"      Chunk: {len(candles)} candles", flush=True)
+
+            current_start = current_end
+            time.sleep(RATE_LIMIT_DELAY)  # Respect rate limits
+
+        # Deduplicate
+        seen = set()
+        unique_candles = []
+        for c in sorted(all_candles, key=lambda x: x["timestamp_epoch"]):
+            if c["timestamp_epoch"] not in seen:
+                seen.add(c["timestamp_epoch"])
+                unique_candles.append(c)
+
+        results[tf] = unique_candles
+
+        if conn and asset_id:
+            print(f"      Total: {len(unique_candles):,} candles ({total_inserted} new)", flush=True)
+        else:
+            print(f"      Total: {len(unique_candles):,} candles", flush=True)
+
+    return results
+
+
+# =============================================================================
 # GECKOTERMINAL FETCHER
 # =============================================================================
 #
@@ -877,6 +1077,10 @@ def fetch_for_asset(
         price_source = "birdeye"
         print(f"    Mode: BACKFILL from Birdeye")
         print(f"    Token mint: {asset['token_mint']}")
+    elif backfill and asset.get("backfill_source") == "coingecko" and asset.get("coingecko_id"):
+        price_source = "coingecko"
+        print(f"    Mode: BACKFILL from CoinGecko")
+        print(f"    CoinGecko ID: {asset['coingecko_id']}")
     else:
         price_source = asset["price_source"]
         print(f"    Source: {price_source}")
@@ -931,7 +1135,45 @@ def fetch_for_asset(
                     "count": len(candles),
                     "latest": datetime.utcfromtimestamp(latest_ts).isoformat(),
                 }
-    
+
+    elif price_source == "coingecko":
+        coingecko_id = asset.get("coingecko_id")
+        if not coingecko_id:
+            conn.close()
+            return {"status": "error", "reason": "No coingecko_id configured for CoinGecko backfill"}
+
+        # CoinGecko only supports 1h and 1d
+        if timeframes is None:
+            timeframes = ["1h", "1d"]
+        else:
+            timeframes = [tf for tf in timeframes if tf in ["1h", "1d"]]
+
+        if not timeframes:
+            conn.close()
+            return {"status": "error", "reason": "CoinGecko only supports 1h and 1d timeframes"}
+
+        # Pass conn and asset_id for progressive saving
+        price_data = fetch_coingecko_all_timeframes(
+            coingecko_id, launch_ts, timeframes,
+            conn=conn,
+            asset_id=asset_id,
+            fresh=fresh or full_fetch
+        )
+
+        # Track results
+        for tf, candles in price_data.items():
+            if candles:
+                latest_ts = max(c["timestamp_epoch"] for c in candles)
+                update_ingestion_state(
+                    conn, asset_id, f"prices_{tf}",
+                    last_timestamp=datetime.utcfromtimestamp(latest_ts)
+                )
+
+                results["timeframes"][tf] = {
+                    "count": len(candles),
+                    "latest": datetime.utcfromtimestamp(latest_ts).isoformat(),
+                }
+
     elif price_source == "geckoterminal":
         pool_address = asset.get("pool_address")
         network = asset.get("network")
