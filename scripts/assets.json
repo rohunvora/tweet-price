@@ -140,6 +140,21 @@
       "color": "#5B5BD6",
       "enabled": true,
       "logo": "/logos/zora.png"
+    },
+    {
+      "id": "meta",
+      "name": "META",
+      "founder": "metaproph3t",
+      "network": "solana",
+      "pool_address": "6keoGHNmqDgLm6Cn27i2SWXzAr2N2U92mr5E6jibcaDE",
+      "token_mint": "METADDFL6wWMWEoKTFJwcThTbUmtarRJZjRpzUvkxhr",
+      "coingecko_id": "meta-2",
+      "price_source": "geckoterminal",
+      "backfill_source": "birdeye",
+      "launch_date": "2025-10-06T00:00:00Z",
+      "color": "#3B82F6",
+      "enabled": true,
+      "logo": "/logos/meta.png"
     }
   ]
 }

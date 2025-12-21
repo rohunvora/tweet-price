@@ -1,0 +1,13 @@
+{
+  "asset_id": "meta",
+  "timeframe": "1m",
+  "chunks": [
+    {
+      "month": "2025-12",
+      "file": "prices_1m_2025-12.json",
+      "count": 927,
+      "start": 1765422060,
+      "end": 1766343900
+    }
+  ]
+}
