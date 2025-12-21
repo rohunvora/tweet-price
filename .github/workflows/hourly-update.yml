@@ -152,12 +152,51 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
 
+      - name: Snapshot current data counts (pre-export)
+        id: pre-snapshot
+        run: |
+          echo "📸 Capturing pre-export data counts..."
+          cd scripts
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          from pathlib import Path
+
+          static_dir = Path('../web/public/static')
+          snapshot = {}
+
+          with open('assets.json') as f:
+              assets = [a for a in json.load(f)['assets'] if a.get('enabled', True)]
+
+          for asset in assets:
+              asset_id = asset['id']
+              asset_dir = static_dir / asset_id
+              counts = {'1h': 0, '1d': 0, '15m': 0, 'tweets': 0}
+
+              for tf in ['1h', '1d', '15m']:
+                  f_path = asset_dir / f'prices_{tf}.json'
+                  if f_path.exists():
+                      with open(f_path) as f:
+                          counts[tf] = json.load(f).get('count', 0)
+
+              tweets_path = asset_dir / 'tweet_events.json'
+              if tweets_path.exists():
+                  with open(tweets_path) as f:
+                      counts['tweets'] = json.load(f).get('count', 0)
+
+              snapshot[asset_id] = counts
+              print(f'{asset_id}: 1h={counts["1h"]}, 1d={counts["1d"]}, 15m={counts["15m"]}, tweets={counts["tweets"]}')
+
+          # Save snapshot for comparison
+          with open('/tmp/pre_export_snapshot.json', 'w') as f:
+              json.dump(snapshot, f)
+          PYTHON_SCRIPT
+
       - name: Export static data
         id: export
         run: |
           echo "📦 Exporting static JSON files..."
           cd scripts
-          python export_static.py 2>&1
+          python export_static.py --no-validate 2>&1
 
           # Verify export produced files
           if [ -d "../web/public/static/pump" ]; then
@@ -170,56 +209,97 @@ jobs:
           fi
         timeout-minutes: 5
 
-      - name: Validate exported data
+      - name: Validate exported data (prevent truncation)
+        id: validate
         if: steps.export.outputs.export_ok == 'true'
         run: |
-          echo "Validating exported data..."
+          echo "🔍 Validating exported data (checking for truncation)..."
           cd scripts
           python3 << 'PYTHON_SCRIPT'
           import json
+          import sys
           from pathlib import Path
 
           static_dir = Path('../web/public/static')
           errors = []
+          truncation_errors = []
+
+          # Load pre-export snapshot
+          try:
+              with open('/tmp/pre_export_snapshot.json') as f:
+                  pre_snapshot = json.load(f)
+          except:
+              pre_snapshot = {}
 
           with open('assets.json') as f:
               assets = [a for a in json.load(f)['assets'] if a.get('enabled', True)]
 
           print()
+          print('=' * 60)
+          print('DATA TRUNCATION CHECK')
+          print('=' * 60)
+
           for asset in assets:
               asset_id = asset['id']
               asset_dir = static_dir / asset_id
+              pre = pre_snapshot.get(asset_id, {'1h': 0, '1d': 0, '15m': 0, 'tweets': 0})
 
               required = ['tweet_events.json', 'prices_1h.json', 'prices_1d.json', 'stats.json']
               missing = [f for f in required if not (asset_dir / f).exists()]
 
               if missing:
                   errors.append(f'{asset_id}: missing {missing}')
-                  print(f'MISSING {asset_id.upper()}: {missing}')
+                  print(f'❌ {asset_id.upper()}: missing {missing}')
                   continue
 
+              # Get new counts
+              new_counts = {}
+              for tf in ['1h', '1d', '15m']:
+                  f_path = asset_dir / f'prices_{tf}.json'
+                  if f_path.exists():
+                      with open(f_path) as f:
+                          new_counts[tf] = json.load(f).get('count', 0)
+                  else:
+                      new_counts[tf] = 0
+
               with open(asset_dir / 'tweet_events.json') as f:
-                  tweet_count = json.load(f).get('count', 0)
+                  new_counts['tweets'] = json.load(f).get('count', 0)
 
-              with open(asset_dir / 'prices_1h.json') as f:
-                  price_count = json.load(f).get('count', 0)
+              # Check for truncation (new count < 90% of old count)
+              status = '✓'
+              for key in ['1h', '1d', '15m', 'tweets']:
+                  old_val = pre.get(key, 0)
+                  new_val = new_counts.get(key, 0)
+                  # Only check if there was previous data
+                  if old_val > 10 and new_val < old_val * 0.9:
+                      truncation_errors.append(
+                          f'{asset_id}/{key}: {old_val} → {new_val} (lost {old_val - new_val})'
+                      )
+                      status = '❌ TRUNCATED'
 
-              if tweet_count == 0:
-                  errors.append(f'{asset_id}: no tweets')
-                  print(f'WARN {asset_id.upper()}: {tweet_count} tweets, {price_count} prices')
-              elif price_count == 0:
-                  errors.append(f'{asset_id}: no prices')
-                  print(f'ERROR {asset_id.upper()}: {tweet_count} tweets, {price_count} prices')
-              else:
-                  print(f'OK {asset_id.upper()}: {tweet_count} tweets, {price_count} prices')
+              print(f'{status} {asset_id.upper()}: 1h={new_counts["1h"]}, 1d={new_counts["1d"]}, tweets={new_counts["tweets"]}')
+              if pre.get('1h', 0) > 0:
+                  print(f'   (was: 1h={pre["1h"]}, 1d={pre["1d"]}, tweets={pre["tweets"]})')
 
           print()
+          print('=' * 60)
+
+          if truncation_errors:
+              print('🚨 DATA TRUNCATION DETECTED - BLOCKING COMMIT')
+              print('The following data would be lost:')
+              for e in truncation_errors:
+                  print(f'   - {e}')
+              print()
+              print('This usually means the database is missing historical data.')
+              print('To fix: restore DB from backup or re-fetch with --backfill')
+              sys.exit(1)
+
           if errors:
-              print(f'Validation warnings: {len(errors)}')
+              print(f'⚠️  Validation warnings: {len(errors)}')
               for e in errors:
                   print(f'   - {e}')
           else:
-              print('All assets validated successfully')
+              print('✅ All assets validated - no truncation detected')
           PYTHON_SCRIPT
 
       - name: Generate timestamp
