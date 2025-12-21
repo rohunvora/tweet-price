@@ -119,20 +119,6 @@
       "tweet_filter_note": "Only tweets mentioning $USELESS"
     },
     {
-      "id": "pengu",
-      "name": "PENGU",
-      "founder": "LucaNetz",
-      "network": "solana",
-      "pool_address": null,
-      "token_mint": null,
-      "coingecko_id": "pudgy-penguins",
-      "price_source": "coingecko",
-      "backfill_source": null,
-      "launch_date": "2024-12-17T00:00:00Z",
-      "color": "#5B9BD5",
-      "enabled": false
-    },
-    {
       "id": "zora",
       "name": "ZORA",
       "founder": "js_horne",
