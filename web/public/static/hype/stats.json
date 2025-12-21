@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-21T03:38:58.301123Z",
+  "generated_at": "2025-12-21T04:23:11.348630Z",
   "asset": "hype",
   "asset_name": "HYPE",
   "founder": "chameleon_jeff",
@@ -302,13 +302,13 @@
     },
     {
       "start_ts": 1765312686,
-      "end_ts": 1766288338,
+      "end_ts": 1766290991,
       "gap_days": 11.3,
       "start_date": "2025-12-09",
       "end_date": "ongoing",
       "is_current": true,
       "price_start": 28.843,
-      "price_end": 23.872,
+      "price_end": 23.879,
       "change_pct": -17.2
     }
   ]
