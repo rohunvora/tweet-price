@@ -634,35 +634,185 @@ def insert_prices(
     return len(data)
 
 
+def _get_tweet_events_all(
+    conn: duckdb.DuckDBPyConnection,
+    asset_id: Optional[str],
+    use_daily_fallback: bool
+) -> List[tuple]:
+    """
+    Internal helper to get ALL tweet events including filtered ones.
+    Returns raw tuples matching the same format as the view queries.
+    """
+    # Build a query that mirrors the view but without is_filtered filter
+    if use_daily_fallback:
+        # Simple daily fallback query (no is_filtered filter)
+        query = """
+            SELECT
+                t.id AS tweet_id,
+                t.asset_id,
+                a.name AS asset_name,
+                a.founder,
+                a.color AS asset_color,
+                t.timestamp,
+                t.text,
+                t.likes,
+                t.retweets,
+                t.replies,
+                t.impressions,
+                (SELECT p.close
+                 FROM prices p
+                 WHERE p.asset_id = t.asset_id
+                   AND p.timeframe = '1d'
+                   AND p.timestamp <= t.timestamp
+                 ORDER BY p.timestamp DESC
+                 LIMIT 1) AS price_at_tweet,
+                (SELECT p.close
+                 FROM prices p
+                 WHERE p.asset_id = t.asset_id
+                   AND p.timeframe = '1d'
+                   AND p.timestamp <= t.timestamp + INTERVAL '1 day'
+                 ORDER BY p.timestamp DESC
+                 LIMIT 1) AS price_1h,
+                (SELECT p.close
+                 FROM prices p
+                 WHERE p.asset_id = t.asset_id
+                   AND p.timeframe = '1d'
+                   AND p.timestamp <= t.timestamp + INTERVAL '1 day'
+                 ORDER BY p.timestamp DESC
+                 LIMIT 1) AS price_24h
+            FROM tweets t
+            JOIN assets a ON t.asset_id = a.id
+            WHERE a.enabled = true
+              AND t.timestamp >= a.launch_date
+        """
+    else:
+        # Full query mirroring tweet_events view but without is_filtered filter
+        query = """
+            WITH tweet_base AS (
+                SELECT
+                    t.id AS tweet_id,
+                    t.asset_id,
+                    a.name AS asset_name,
+                    a.founder,
+                    a.color AS asset_color,
+                    t.timestamp,
+                    t.text,
+                    t.likes,
+                    t.retweets,
+                    t.replies,
+                    t.impressions
+                FROM tweets t
+                JOIN assets a ON t.asset_id = a.id
+                WHERE a.enabled = true
+                  AND t.timestamp >= a.launch_date
+            ),
+            price_at_tweet AS (
+                SELECT DISTINCT ON (tb.tweet_id)
+                    tb.tweet_id,
+                    p.close AS price_at_tweet
+                FROM tweet_base tb
+                LEFT JOIN prices p ON p.asset_id = tb.asset_id
+                    AND p.timestamp <= tb.timestamp
+                    AND (
+                        (p.timeframe = '1m' AND tb.timestamp - p.timestamp <= INTERVAL '1 hour')
+                        OR (p.timeframe = '1h' AND tb.timestamp - p.timestamp <= INTERVAL '24 hours')
+                        OR (p.timeframe = '1d' AND tb.timestamp - p.timestamp <= INTERVAL '7 days')
+                    )
+                ORDER BY tb.tweet_id,
+                    CASE p.timeframe WHEN '1m' THEN 1 WHEN '1h' THEN 2 WHEN '1d' THEN 3 END,
+                    p.timestamp DESC
+            ),
+            price_1h AS (
+                SELECT DISTINCT ON (tb.tweet_id)
+                    tb.tweet_id,
+                    p.close AS price_1h
+                FROM tweet_base tb
+                LEFT JOIN prices p ON p.asset_id = tb.asset_id
+                    AND p.timestamp <= tb.timestamp + INTERVAL '1 hour'
+                    AND (
+                        (p.timeframe = '1m' AND (tb.timestamp + INTERVAL '1 hour') - p.timestamp <= INTERVAL '1 hour')
+                        OR (p.timeframe = '1h' AND (tb.timestamp + INTERVAL '1 hour') - p.timestamp <= INTERVAL '24 hours')
+                        OR (p.timeframe = '1d' AND (tb.timestamp + INTERVAL '1 hour') - p.timestamp <= INTERVAL '7 days')
+                    )
+                ORDER BY tb.tweet_id,
+                    CASE p.timeframe WHEN '1m' THEN 1 WHEN '1h' THEN 2 WHEN '1d' THEN 3 END,
+                    p.timestamp DESC
+            ),
+            price_24h AS (
+                SELECT DISTINCT ON (tb.tweet_id)
+                    tb.tweet_id,
+                    p.close AS price_24h
+                FROM tweet_base tb
+                LEFT JOIN prices p ON p.asset_id = tb.asset_id
+                    AND p.timestamp <= tb.timestamp + INTERVAL '24 hours'
+                    AND (
+                        (p.timeframe = '1m' AND (tb.timestamp + INTERVAL '24 hours') - p.timestamp <= INTERVAL '1 hour')
+                        OR (p.timeframe = '1h' AND (tb.timestamp + INTERVAL '24 hours') - p.timestamp <= INTERVAL '24 hours')
+                        OR (p.timeframe = '1d' AND (tb.timestamp + INTERVAL '24 hours') - p.timestamp <= INTERVAL '7 days')
+                    )
+                ORDER BY tb.tweet_id,
+                    CASE p.timeframe WHEN '1m' THEN 1 WHEN '1h' THEN 2 WHEN '1d' THEN 3 END,
+                    p.timestamp DESC
+            )
+            SELECT
+                tb.tweet_id, tb.asset_id, tb.asset_name, tb.founder, tb.asset_color,
+                tb.timestamp, tb.text, tb.likes, tb.retweets, tb.replies, tb.impressions,
+                pat.price_at_tweet,
+                p1h.price_1h,
+                p24h.price_24h
+            FROM tweet_base tb
+            LEFT JOIN price_at_tweet pat ON tb.tweet_id = pat.tweet_id
+            LEFT JOIN price_1h p1h ON tb.tweet_id = p1h.tweet_id
+            LEFT JOIN price_24h p24h ON tb.tweet_id = p24h.tweet_id
+        """
+
+    if asset_id:
+        query += " WHERE tb.asset_id = ?" if not use_daily_fallback else " AND t.asset_id = ?"
+        query += " ORDER BY " + ("t.timestamp" if use_daily_fallback else "tb.timestamp")
+        return conn.execute(query, [asset_id]).fetchall()
+    else:
+        query += " ORDER BY " + ("t.timestamp" if use_daily_fallback else "tb.timestamp")
+        return conn.execute(query).fetchall()
+
+
 def get_tweet_events(
     conn: duckdb.DuckDBPyConnection,
     asset_id: Optional[str] = None,
-    use_daily_fallback: bool = False
+    use_daily_fallback: bool = False,
+    include_filtered: bool = False
 ) -> List[Dict[str, Any]]:
     """
     Get aligned tweet events from the view.
-    Optionally filter by asset_id.
-    use_daily_fallback uses 1d prices for assets without 1m data.
+
+    Args:
+        asset_id: Filter by asset (optional)
+        use_daily_fallback: Use 1d prices for assets without 1m data
+        include_filtered: If True, include tweets marked as filtered (is_filtered=TRUE)
+                          Used to export all tweets for "Only mentions" toggle
     """
-    view_name = "tweet_events_daily" if use_daily_fallback else "tweet_events"
-    
-    if asset_id:
-        results = conn.execute(f"""
-            SELECT tweet_id, asset_id, asset_name, founder, asset_color,
-                   timestamp, text, likes, retweets, replies, impressions,
-                   price_at_tweet, price_1h, price_24h
-            FROM {view_name}
-            WHERE asset_id = ?
-            ORDER BY timestamp
-        """, [asset_id]).fetchall()
+    # If include_filtered, we need a custom query since the views exclude filtered tweets
+    if include_filtered:
+        results = _get_tweet_events_all(conn, asset_id, use_daily_fallback)
     else:
-        results = conn.execute(f"""
-            SELECT tweet_id, asset_id, asset_name, founder, asset_color,
-                   timestamp, text, likes, retweets, replies, impressions,
-                   price_at_tweet, price_1h, price_24h
-            FROM {view_name}
-            ORDER BY timestamp
-        """).fetchall()
+        view_name = "tweet_events_daily" if use_daily_fallback else "tweet_events"
+
+        if asset_id:
+            results = conn.execute(f"""
+                SELECT tweet_id, asset_id, asset_name, founder, asset_color,
+                       timestamp, text, likes, retweets, replies, impressions,
+                       price_at_tweet, price_1h, price_24h
+                FROM {view_name}
+                WHERE asset_id = ?
+                ORDER BY timestamp
+            """, [asset_id]).fetchall()
+        else:
+            results = conn.execute(f"""
+                SELECT tweet_id, asset_id, asset_name, founder, asset_color,
+                       timestamp, text, likes, retweets, replies, impressions,
+                       price_at_tweet, price_1h, price_24h
+                FROM {view_name}
+                ORDER BY timestamp
+            """).fetchall()
     
     events = []
     for r in results:

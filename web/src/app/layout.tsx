@@ -25,17 +25,26 @@ export const metadata: Metadata = {
   title: "Tweet-Price Correlation Analyzer",
   description:
     "Do founder tweets correlate with token price? Analyze the relationship between crypto project founders' tweets and their token's price action across multiple assets.",
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+    ],
+  },
   openGraph: {
     title: "Tweet-Price Correlation Analyzer",
     description:
       "Do founder tweets correlate with token price? Interactive charts and statistical analysis for PUMP, JUP, HYPE, ASTER, and more.",
     type: "website",
+    images: [{ url: '/og-image.png', width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",
+    site: "@frankdegods",
     title: "Tweet-Price Correlation Analyzer",
     description:
       "Do founder tweets correlate with token price? Interactive charts and statistical analysis for PUMP, JUP, HYPE, ASTER, and more.",
+    images: ['/og-image.png'],
   },
 };
 

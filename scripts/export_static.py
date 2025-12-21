@@ -607,19 +607,49 @@ def export_tweet_events_for_asset(
     }
     
     # Add keyword filter note if asset uses keyword filtering
-    if asset and asset.get("keyword_filter"):
+    has_keyword_filter = asset and asset.get("keyword_filter")
+    if has_keyword_filter:
         output["keyword_filter"] = asset["keyword_filter"]
         output["tweet_filter_note"] = asset.get("tweet_filter_note", f"Only tweets mentioning \"{asset['keyword_filter']}\"")
-    
+
     output_dir.mkdir(parents=True, exist_ok=True)
     filepath = output_dir / "tweet_events.json"
-    
+
     with open(filepath, "w") as f:
         json.dump(output, f, indent=2)
-    
+
     size_kb = filepath.stat().st_size / 1024
     print(f"    Tweet events: {len(events)} events ({size_kb:.1f} KB)")
-    
+
+    # For assets with keyword_filter, also export unfiltered "all tweets" version
+    # This enables the "Only mentions" toggle in the UI
+    if has_keyword_filter:
+        all_events = get_tweet_events(conn, asset_id, use_daily_fallback=use_daily_fallback, include_filtered=True)
+
+        # Filter out tweets without price data (same as above)
+        if filter_no_price:
+            all_events = [e for e in all_events if e.get("price_at_tweet") is not None]
+
+        if all_events:
+            output_all = {
+                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "asset": asset_id,
+                "asset_name": asset["name"] if asset else asset_id.upper(),
+                "founder": asset["founder"] if asset else "",
+                "founder_type": asset.get("founder_type", "founder") if asset else "founder",
+                "price_definition": "candle close at minute boundary" if not use_daily_fallback else "daily close",
+                "count": len(all_events),
+                "is_unfiltered": True,
+                "events": all_events
+            }
+
+            filepath_all = output_dir / "tweet_events_all.json"
+            with open(filepath_all, "w") as f:
+                json.dump(output_all, f, indent=2)
+
+            size_kb_all = filepath_all.stat().st_size / 1024
+            print(f"    Tweet events (all): {len(all_events)} events ({size_kb_all:.1f} KB)")
+
     return len(events)
 
 

@@ -180,33 +180,57 @@ async function load1mPrices(assetId: string): Promise<PriceData> {
 
 /**
  * Load tweet events data for a specific asset
+ * @param assetId - The asset ID to load tweets for
+ * @param includeFiltered - If true, load all tweets (tweet_events_all.json),
+ *                          otherwise load filtered tweets (tweet_events.json)
  */
-export async function loadTweetEvents(assetId: string): Promise<TweetEventsData> {
-  const cacheKey = assetId;
+export async function loadTweetEvents(assetId: string, includeFiltered: boolean = false): Promise<TweetEventsData> {
+  const cacheKey = includeFiltered ? `${assetId}:all` : assetId;
 
   if (tweetCache.has(cacheKey)) {
-    log(`Using cached tweet events for ${assetId}`);
+    log(`Using cached tweet events for ${cacheKey}`);
     return tweetCache.get(cacheKey)!;
   }
 
-  log(`Loading tweet events for ${assetId}`);
-
   // Add cache-busting timestamp to force fresh data after deployments
   const cacheBuster = `?v=${Date.now()}`;
-  const path = `/static/${assetId}/tweet_events.json${cacheBuster}`;
+  const filename = includeFiltered ? 'tweet_events_all.json' : 'tweet_events.json';
+  const path = `/static/${assetId}/${filename}${cacheBuster}`;
+
+  log(`Loading tweet events from ${path}`);
 
   const response = await fetch(path, { cache: 'no-store' });
-  
+
+  // If requesting all tweets but file doesn't exist, fall back to filtered
+  if (!response.ok && includeFiltered) {
+    log(`No unfiltered tweets file for ${assetId}, falling back to filtered`);
+    return loadTweetEvents(assetId, false);
+  }
+
   if (!response.ok) {
     throw new Error(`Missing tweet events: ${path} (${response.status} ${response.statusText})`);
   }
-  
+
   const data: TweetEventsData = await response.json();
-  
-  log(`Loaded ${data.count} tweet events for ${assetId}`);
-  
+
+  log(`Loaded ${data.count} tweet events for ${assetId} (${includeFiltered ? 'all' : 'filtered'})`);
+
   tweetCache.set(cacheKey, data);
   return data;
+}
+
+/**
+ * Check if an asset has unfiltered tweets available
+ * (i.e., has a tweet_events_all.json file)
+ */
+export async function hasUnfilteredTweets(assetId: string): Promise<boolean> {
+  const path = `/static/${assetId}/tweet_events_all.json`;
+  try {
+    const response = await fetch(path, { method: 'HEAD', cache: 'no-store' });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 // =============================================================================

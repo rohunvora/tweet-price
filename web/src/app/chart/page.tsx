@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { loadTweetEvents, loadAssets, loadLastUpdated } from '@/lib/dataLoader';
+import { loadTweetEvents, loadAssets, loadLastUpdated, hasUnfilteredTweets } from '@/lib/dataLoader';
 import { TweetEvent, TweetEventsData, Asset } from '@/lib/types';
 import AssetSelector from '@/components/AssetSelector';
 
@@ -92,6 +92,8 @@ function ChartPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [onlyMentions, setOnlyMentions] = useState(true);
+  const [hasFilteredTweets, setHasFilteredTweets] = useState(false);
 
   // Get asset ID from URL, default to 'pump'
   const assetId = searchParams.get('asset') || 'pump';
@@ -100,11 +102,11 @@ function ChartPageContent() {
   useEffect(() => {
     async function init() {
       console.log(`[ChartPage] Initializing with asset: ${assetId}`);
-      
+
       try {
         const loadedAssets = await loadAssets();
         setAssets(loadedAssets);
-        
+
         // Validate asset exists
         const asset = loadedAssets.find(a => a.id === assetId);
         if (!asset) {
@@ -112,37 +114,44 @@ function ChartPageContent() {
             `Invalid asset: "${assetId}". Valid assets: ${loadedAssets.map(a => a.id).join(', ')}`
           );
         }
-        
+
         console.log(`[ChartPage] Selected asset: ${asset.name} (${asset.id})`);
         setSelectedAsset(asset);
-        
-        // Load tweet events for this asset
-        const eventsData = await loadTweetEvents(assetId);
+
+        // Check if asset has unfiltered tweets available (keyword filter)
+        const hasUnfiltered = await hasUnfilteredTweets(assetId);
+        setHasFilteredTweets(hasUnfiltered);
+
+        // Load tweet events (filtered by default if available)
+        const eventsData = await loadTweetEvents(assetId, false);
         setTweetEvents(eventsData.events);
         setEventsMetadata({
           founder_type: eventsData.founder_type,
           keyword_filter: eventsData.keyword_filter,
           tweet_filter_note: eventsData.tweet_filter_note,
         });
-        
+
         console.log(`[ChartPage] Loaded ${eventsData.events.length} tweets for ${asset.name}`);
         if (eventsData.keyword_filter) {
-          console.log(`[ChartPage] Keyword filter: "${eventsData.keyword_filter}"`);
+          console.log(`[ChartPage] Keyword filter: "${eventsData.keyword_filter}" (unfiltered available: ${hasUnfiltered})`);
         }
 
         // Load last updated timestamp
         const updated = await loadLastUpdated();
         setLastUpdated(updated);
 
+        // Reset onlyMentions to true when switching assets
+        setOnlyMentions(true);
+
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[ChartPage] Error: ${message}`);
         setError(message);
       }
-      
+
       setLoading(false);
     }
-    
+
     init();
   }, [assetId]);
 
@@ -151,6 +160,22 @@ function ChartPageContent() {
     console.log(`[ChartPage] Switching to asset: ${asset.id}`);
     router.push(`/chart?asset=${asset.id}`);
   }, [router]);
+
+  // Handle "Only mentions" toggle
+  const handleOnlyMentionsToggle = useCallback(async () => {
+    if (!selectedAsset) return;
+
+    const newValue = !onlyMentions;
+    setOnlyMentions(newValue);
+
+    console.log(`[ChartPage] Only mentions: ${newValue ? 'ON' : 'OFF'}`);
+
+    // Reload tweets with the new filter setting
+    // onlyMentions=true means filtered (only mentions), false means all tweets
+    const eventsData = await loadTweetEvents(selectedAsset.id, !newValue);
+    setTweetEvents(eventsData.events);
+    console.log(`[ChartPage] Reloaded ${eventsData.events.length} tweets`);
+  }, [selectedAsset, onlyMentions]);
 
   // Error state
   if (error) {
@@ -240,18 +265,23 @@ function ChartPageContent() {
             <FounderAvatar founder={selectedAsset.founder} color={selectedAsset.color} />
             <span>@{selectedAsset.founder}</span>
           </a>
-          {/* Keyword filter indicator */}
-          {eventsMetadata.tweet_filter_note && (
-            <span 
-              className="badge badge-info"
-              title={`Keyword filter: "${eventsMetadata.keyword_filter}"`}
-            >
-              {eventsMetadata.tweet_filter_note}
-            </span>
+          {/* "Only mentions" checkbox - only shown for assets with keyword filter */}
+          {hasFilteredTweets && (
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={onlyMentions}
+                onChange={handleOnlyMentionsToggle}
+                className="w-3.5 h-3.5 rounded border-[var(--border-subtle)] bg-[var(--surface-0)] text-[var(--accent)] focus:ring-[var(--accent)] focus:ring-offset-0 cursor-pointer"
+              />
+              <span className="text-xs text-[var(--text-muted)]">
+                Only mentions
+              </span>
+            </label>
           )}
           {/* Data quality note */}
           {selectedAsset.data_note && (
-            <span 
+            <span
               className="badge badge-warning"
               title={selectedAsset.data_note}
             >
