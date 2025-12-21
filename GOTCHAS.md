@@ -151,6 +151,64 @@ Fake wicks (MEV bots, fat fingers, data errors) are automatically capped during 
 
 ## API Quirks: Know Before You Fetch
 
+### CoinGecko: Use /ohlc/range, NOT /market_chart/range (fetch_prices.py)
+
+**Symptom:** Chart renders as dots instead of candles, irregular timestamps.
+
+**Root Cause:** The `/market_chart/range` endpoint returns **price points at irregular intervals**
+(e.g., 13:12:40, 14:11:16), not proper OHLC candles. lightweight-charts expects regular intervals.
+
+**Wrong endpoint:**
+```
+GET /coins/{id}/market_chart/range?from=X&to=Y
+Returns: [[timestamp, price], ...] at ~hourly but IRREGULAR times
+```
+
+**Correct endpoint:**
+```
+GET /coins/{id}/ohlc/range?from=X&to=Y&interval=hourly
+Returns: [[timestamp, O, H, L, C], ...] at EXACT hour boundaries
+```
+
+**Plan requirements:**
+- `/market_chart/range`: Basic plan ($35/mo) - but gives irregular data!
+- `/ohlc/range`: Analyst plan ($129/mo) or higher - proper OHLC candles
+
+**Request limits:**
+- Hourly: max 31 days per request (chunk into 30-day batches)
+- Daily: max 180 days per request
+
+**CoinGecko only supports 1h and 1d.** No 15m or 1m data available at any tier.
+
+**Fixed in:** December 2024 after HYPE chart showed dots instead of candles.
+
+---
+
+### CoinGecko Usage Guidelines
+
+**When to use CoinGecko:**
+- Non-Solana chains (HYPE on Hyperliquid, EVM chains without DEX pools)
+- CEX-only tokens not available on DEXes
+- Backup/validation data source
+
+**When NOT to use CoinGecko:**
+- Solana DEX tokens (use GeckoTerminal + Birdeye instead)
+- When you need 15m or 1m data (not supported)
+- Demo/free tier (irregular timestamps break charts)
+
+**CLI usage:**
+```bash
+# Backfill with CoinGecko (requires backfill_source: "coingecko" in assets.json)
+python fetch_prices.py --asset hype --backfill --fresh
+
+# Regular fetch uses price_source, backfill uses backfill_source
+```
+
+**GitHub Actions:** CoinGecko backfill is NOT run in hourly workflow.
+Use `--backfill` manually for historical data. Regular hourly updates use primary price_source.
+
+---
+
 ### GeckoTerminal Only Supports Backward Pagination (fetch_prices.py)
 
 GeckoTerminal API only accepts `before_timestamp`, not `after_timestamp`.
@@ -419,6 +477,56 @@ python fetch_prices.py --asset ASSET --backfill
 
 ---
 
+## True Validation: Expected vs Actual Candles
+
+### The Problem with "File Exists" Validation
+
+Checking "does the JSON file exist and have data" is **NOT real validation**.
+This approach missed the HYPE bug where 14,294 candles existed but at irregular
+timestamps, causing the chart to render as dots instead of candles.
+
+### True Validation Method
+
+Use `validate_candle_coverage.py` to validate against mathematical truth:
+
+```bash
+python validate_candle_coverage.py --asset hype --verbose
+```
+
+**How it works:**
+1. Load `launch_date` from assets.json (source of truth)
+2. Calculate expected candles: `(today - launch_date) / interval`
+3. Compare against actual candles in exported JSON
+4. Report coverage % and detect gaps
+5. Fail if coverage < 95%
+
+**Example output:**
+```
+Timeframe    Expected     Actual   Coverage   Status
+--------------------------------------------------
+1d                387        384      99.2%       OK
+1h              9,310      9,229      99.1%       OK
+15m            37,241      5,936      15.9%     FAIL
+```
+
+### When to Run Validation
+
+- After any `fetch_prices.py --backfill` operation
+- After changing CoinGecko/Birdeye fetch logic
+- Before committing data changes
+- When investigating chart rendering issues
+
+### What Validation Catches
+
+1. **Coverage gaps** - Missing date ranges (e.g., 15m data only covers recent months)
+2. **Pre-launch data** - Data before token existed (suspicious)
+3. **Irregular timestamps** - More candles than expected suggests non-bucketed data
+4. **Data source issues** - Wrong endpoint, API plan limitations
+
+**DO NOT rely on "file exists" checks.** Always use the validation script.
+
+---
+
 ## Checklist: Before You Commit
 
 - [ ] Did you read this file?
@@ -430,7 +538,9 @@ python fetch_prices.py --asset ASSET --backfill
 - [ ] If deleting DB data: Did you verify overlap first? (See "NEVER DELETE DATA" section)
 - [ ] Run `python export_static.py` - does it complete without errors?
 - [ ] Run `python validate_export.py` - do all assets pass?
+- [ ] Run `python validate_candle_coverage.py --asset X` - is coverage ≥95%?
 - [ ] Open the frontend - do charts load without crashing?
+- [ ] Do charts render as CANDLES (not dots)?
 
 ---
 
