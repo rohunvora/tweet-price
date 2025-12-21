@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-20T23:10:01.683444Z",
+  "generated_at": "2025-12-21T00:43:32.558098Z",
   "asset": "aster",
   "asset_name": "ASTER",
   "founder": "cz_binance",
@@ -10,7 +10,7 @@
       "start": "2025-09-17",
       "end": "2025-12-19"
     },
-    "total_days_analyzed": 185
+    "total_days_analyzed": 186
   },
   "daily_comparison": {
     "tweet_day_count": 79,
@@ -28,31 +28,31 @@
       "positive_count": 35,
       "negative_count": 44
     },
-    "no_tweet_day_count": 105,
-    "no_tweet_day_avg_return": 0.29,
-    "no_tweet_day_win_rate": 48.6,
+    "no_tweet_day_count": 106,
+    "no_tweet_day_avg_return": 0.3,
+    "no_tweet_day_win_rate": 49.1,
     "no_tweet_day_distribution": {
-      "count": 105,
-      "mean": 0.29,
+      "count": 106,
+      "mean": 0.3,
       "median": -0.0,
-      "std_dev": 5.68,
+      "std_dev": 5.65,
       "min": -18.4,
       "max": 51.94,
       "q1": -0.18,
-      "q3": 0.19,
-      "positive_count": 51,
+      "q3": 0.21,
+      "positive_count": 52,
       "negative_count": 54
     },
-    "t_statistic": 0.618,
-    "p_value": 0.5376,
+    "t_statistic": 0.619,
+    "p_value": 0.5369,
     "significant": false,
     "confidence_label": "none"
   },
   "correlation": {
-    "correlation_7d": 0.27,
-    "p_value": 0.0002,
+    "correlation_7d": 0.275,
+    "p_value": 0.0001,
     "significant": true,
-    "sample_size": 185,
+    "sample_size": 186,
     "strength_label": "weak"
   },
   "current_status": {
@@ -66,7 +66,7 @@
     "short_history": true,
     "notes": [
       "Small sample: only 79 tweet-days analyzed",
-      "Limited history: 185 days may not capture full market cycles",
+      "Limited history: 186 days may not capture full market cycles",
       "Correlation does not imply causation"
     ]
   },

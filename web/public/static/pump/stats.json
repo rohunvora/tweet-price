@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-20T23:10:15.675271Z",
+  "generated_at": "2025-12-21T00:43:46.474072Z",
   "asset": "pump",
   "asset_name": "PUMP",
   "founder": "a1lon9",
@@ -10,7 +10,7 @@
       "start": "2025-07-14",
       "end": "2025-11-05"
     },
-    "total_days_analyzed": 317
+    "total_days_analyzed": 318
   },
   "daily_comparison": {
     "tweet_day_count": 69,
@@ -28,36 +28,36 @@
       "positive_count": 35,
       "negative_count": 34
     },
-    "no_tweet_day_count": 247,
+    "no_tweet_day_count": 248,
     "no_tweet_day_avg_return": -0.54,
-    "no_tweet_day_win_rate": 38.5,
+    "no_tweet_day_win_rate": 38.3,
     "no_tweet_day_distribution": {
-      "count": 247,
+      "count": 248,
       "mean": -0.54,
       "median": -0.0,
-      "std_dev": 4.79,
+      "std_dev": 4.78,
       "min": -27.46,
       "max": 16.38,
       "q1": -0.0,
       "q3": 0.0,
       "positive_count": 95,
-      "negative_count": 152
+      "negative_count": 153
     },
-    "t_statistic": 2.148,
-    "p_value": 0.0325,
+    "t_statistic": 2.151,
+    "p_value": 0.0323,
     "significant": true,
     "confidence_label": "weak"
   },
   "correlation": {
-    "correlation_7d": 0.459,
+    "correlation_7d": 0.461,
     "p_value": 0.0,
     "significant": true,
-    "sample_size": 317,
+    "sample_size": 318,
     "strength_label": "moderate"
   },
   "current_status": {
     "days_since_last_tweet": 45,
-    "price_change_during_silence": -46.3,
+    "price_change_during_silence": -46.5,
     "last_tweet_date": "2025-11-05"
   },
   "limitations": {
@@ -66,7 +66,7 @@
     "short_history": true,
     "notes": [
       "Small sample: only 69 tweet-days analyzed",
-      "Limited history: 317 days may not capture full market cycles",
+      "Limited history: 318 days may not capture full market cycles",
       "Win rate of 50.7% is near random (50%)",
       "Correlation does not imply causation"
     ]
@@ -124,14 +124,14 @@
     },
     {
       "start_ts": 1762342100,
-      "end_ts": 1766272215,
-      "gap_days": 45.5,
+      "end_ts": 1766277826,
+      "gap_days": 45.6,
       "start_date": "2025-11-05",
       "end_date": "ongoing",
       "is_current": true,
       "price_start": 0.003705170764538777,
-      "price_end": 0.0019881704751563024,
-      "change_pct": -46.3
+      "price_end": 0.0019839938426042605,
+      "change_pct": -46.5
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-20T23:10:22.632808Z",
+  "generated_at": "2025-12-21T00:43:53.296626Z",
   "asset": "useless",
   "asset_name": "USELESS",
   "founder": "theunipcs",
@@ -10,7 +10,7 @@
       "start": "2025-05-23",
       "end": "2025-12-20"
     },
-    "total_days_analyzed": 368
+    "total_days_analyzed": 369
   },
   "daily_comparison": {
     "tweet_day_count": 143,
@@ -28,31 +28,31 @@
       "positive_count": 75,
       "negative_count": 68
     },
-    "no_tweet_day_count": 224,
-    "no_tweet_day_avg_return": -0.14,
-    "no_tweet_day_win_rate": 48.7,
+    "no_tweet_day_count": 225,
+    "no_tweet_day_avg_return": -0.15,
+    "no_tweet_day_win_rate": 48.4,
     "no_tweet_day_distribution": {
-      "count": 224,
-      "mean": -0.14,
+      "count": 225,
+      "mean": -0.15,
       "median": -0.0,
-      "std_dev": 4.65,
+      "std_dev": 4.64,
       "min": -14.94,
       "max": 31.58,
       "q1": -0.0,
       "q3": 0.0,
       "positive_count": 109,
-      "negative_count": 115
+      "negative_count": 116
     },
-    "t_statistic": 1.264,
-    "p_value": 0.207,
+    "t_statistic": 1.271,
+    "p_value": 0.2044,
     "significant": false,
     "confidence_label": "none"
   },
   "correlation": {
-    "correlation_7d": 0.541,
+    "correlation_7d": 0.54,
     "p_value": 0.0,
     "significant": true,
-    "sample_size": 368,
+    "sample_size": 369,
     "strength_label": "moderate"
   },
   "current_status": {

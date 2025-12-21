@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-20T23:10:01.963439Z",
+  "generated_at": "2025-12-21T00:43:32.847524Z",
   "asset": "jup",
   "asset_name": "JUP",
   "founder": "weremeow",
@@ -10,7 +10,7 @@
       "start": "2024-01-31",
       "end": "2025-12-12"
     },
-    "total_days_analyzed": 781
+    "total_days_analyzed": 782
   },
   "daily_comparison": {
     "tweet_day_count": 65,
@@ -28,36 +28,36 @@
       "positive_count": 34,
       "negative_count": 31
     },
-    "no_tweet_day_count": 715,
+    "no_tweet_day_count": 716,
     "no_tweet_day_avg_return": -0.01,
-    "no_tweet_day_win_rate": 43.8,
+    "no_tweet_day_win_rate": 43.9,
     "no_tweet_day_distribution": {
-      "count": 715,
+      "count": 716,
       "mean": -0.01,
       "median": 0.0,
       "std_dev": 5.18,
       "min": -23.6,
       "max": 41.73,
-      "q1": -2.3,
+      "q1": -2.29,
       "q3": 1.74,
-      "positive_count": 313,
+      "positive_count": 314,
       "negative_count": 356
     },
-    "t_statistic": 0.069,
-    "p_value": 0.9446,
+    "t_statistic": 0.067,
+    "p_value": 0.9467,
     "significant": false,
     "confidence_label": "none"
   },
   "correlation": {
-    "correlation_7d": -0.042,
-    "p_value": 0.2383,
+    "correlation_7d": -0.041,
+    "p_value": 0.2496,
     "significant": false,
-    "sample_size": 781,
+    "sample_size": 782,
     "strength_label": "negligible"
   },
   "current_status": {
     "days_since_last_tweet": 8,
-    "price_change_during_silence": -4.6,
+    "price_change_during_silence": -3.3,
     "last_tweet_date": "2025-12-12"
   },
   "limitations": {
@@ -593,14 +593,14 @@
     },
     {
       "start_ts": 1765537272,
-      "end_ts": 1766272201,
-      "gap_days": 8.5,
+      "end_ts": 1766277812,
+      "gap_days": 8.6,
       "start_date": "2025-12-12",
       "end_date": "ongoing",
       "is_current": true,
       "price_start": 0.20383148229191833,
-      "price_end": 0.19444960051106122,
-      "change_pct": -4.6
+      "price_end": 0.19706468018743975,
+      "change_pct": -3.3
     }
   ]
 }

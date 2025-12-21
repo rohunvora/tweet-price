@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-20T23:10:08.842620Z",
+  "generated_at": "2025-12-21T00:43:39.690084Z",
   "asset": "monad",
   "asset_name": "MON",
   "founder": "keoneHD",
@@ -10,7 +10,7 @@
       "start": "2025-11-24",
       "end": "2025-12-17"
     },
-    "total_days_analyzed": 53
+    "total_days_analyzed": 54
   },
   "daily_comparison": {
     "tweet_day_count": 21,
@@ -28,36 +28,36 @@
       "positive_count": 7,
       "negative_count": 14
     },
-    "no_tweet_day_count": 31,
-    "no_tweet_day_avg_return": -0.42,
-    "no_tweet_day_win_rate": 6.5,
+    "no_tweet_day_count": 32,
+    "no_tweet_day_avg_return": -0.38,
+    "no_tweet_day_win_rate": 9.4,
     "no_tweet_day_distribution": {
-      "count": 31,
-      "mean": -0.42,
+      "count": 32,
+      "mean": -0.38,
       "median": 0.0,
-      "std_dev": 4.46,
+      "std_dev": 4.4,
       "min": -12.17,
       "max": 12.48,
       "q1": 0.0,
       "q3": 0.0,
-      "positive_count": 2,
+      "positive_count": 3,
       "negative_count": 4
     },
-    "t_statistic": -0.119,
-    "p_value": 0.9058,
+    "t_statistic": -0.136,
+    "p_value": 0.8923,
     "significant": false,
     "confidence_label": "none"
   },
   "correlation": {
-    "correlation_7d": 0.067,
-    "p_value": 0.6352,
+    "correlation_7d": 0.086,
+    "p_value": 0.5377,
     "significant": false,
-    "sample_size": 53,
+    "sample_size": 54,
     "strength_label": "negligible"
   },
   "current_status": {
     "days_since_last_tweet": 3,
-    "price_change_during_silence": 9.8,
+    "price_change_during_silence": 10.7,
     "last_tweet_date": "2025-12-17"
   },
   "limitations": {
@@ -66,21 +66,21 @@
     "short_history": true,
     "notes": [
       "Small sample: only 21 tweet-days analyzed",
-      "Limited history: 53 days may not capture full market cycles",
+      "Limited history: 54 days may not capture full market cycles",
       "Correlation does not imply causation"
     ]
   },
   "quiet_periods": [
     {
       "start_ts": 1765997773,
-      "end_ts": 1766272208,
+      "end_ts": 1766277819,
       "gap_days": 3.2,
       "start_date": "2025-12-17",
       "end_date": "ongoing",
       "is_current": true,
       "price_start": 0.01692383,
-      "price_end": 0.01857435,
-      "change_pct": 9.8
+      "price_end": 0.01873965,
+      "change_pct": 10.7
     }
   ]
 }

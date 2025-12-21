@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-20T23:10:02.050951Z",
+  "generated_at": "2025-12-21T00:43:32.936338Z",
   "asset": "believe",
   "asset_name": "LAUNCHCOIN",
   "founder": "pasternak",
@@ -10,7 +10,7 @@
       "start": "2025-05-03",
       "end": "2025-10-20"
     },
-    "total_days_analyzed": 438
+    "total_days_analyzed": 439
   },
   "daily_comparison": {
     "tweet_day_count": 41,
@@ -28,31 +28,31 @@
       "positive_count": 26,
       "negative_count": 15
     },
-    "no_tweet_day_count": 396,
+    "no_tweet_day_count": 397,
     "no_tweet_day_avg_return": 5.22,
-    "no_tweet_day_win_rate": 40.7,
+    "no_tweet_day_win_rate": 40.8,
     "no_tweet_day_distribution": {
-      "count": 396,
+      "count": 397,
       "mean": 5.22,
       "median": -0.0,
-      "std_dev": 91.01,
+      "std_dev": 90.9,
       "min": -98.83,
       "max": 1697.62,
-      "q1": -2.59,
+      "q1": -2.54,
       "q3": 0.0,
-      "positive_count": 161,
+      "positive_count": 162,
       "negative_count": 199
     },
     "t_statistic": 0.311,
-    "p_value": 0.7563,
+    "p_value": 0.7559,
     "significant": false,
     "confidence_label": "none"
   },
   "correlation": {
-    "correlation_7d": 0.628,
+    "correlation_7d": 0.629,
     "p_value": 0.0,
     "significant": true,
-    "sample_size": 438,
+    "sample_size": 439,
     "strength_label": "moderate"
   },
   "current_status": {
@@ -262,13 +262,13 @@
     },
     {
       "start_ts": 1760956771,
-      "end_ts": 1766272202,
-      "gap_days": 61.5,
+      "end_ts": 1766277812,
+      "gap_days": 61.6,
       "start_date": "2025-10-20",
       "end_date": "ongoing",
       "is_current": true,
       "price_start": 0.06614018881074833,
-      "price_end": 0.00015495598268099872,
+      "price_end": 0.0001616438822748682,
       "change_pct": -99.8
     }
   ]
