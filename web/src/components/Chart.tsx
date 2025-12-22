@@ -565,17 +565,14 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     }
 
     // Calculate time gaps and price changes between clusters
-    // Use actual tweet boundaries (not averages) for zoom-independent statistics
+    // Uses avgPrice (where bubbles are) so line color matches visual direction
+    // TODO: Revisit this - ideally tie to actual tweet moments while keeping visual consistency
     for (let i = 1; i < clusters.length; i++) {
       const prev = clusters[i - 1];
       const curr = clusters[i];
-      // Time gap: from last tweet of prev cluster to first tweet of current cluster
-      curr.timeSincePrev = curr.firstTweet.timestamp - prev.lastTweet.timestamp;
-      // Price change: during the actual silence period
-      const prevPrice = prev.lastTweet.price_at_tweet;
-      const currPrice = curr.firstTweet.price_at_tweet;
-      if (prevPrice && currPrice && prevPrice > 0) {
-        curr.pctSincePrev = ((currPrice - prevPrice) / prevPrice) * 100;
+      curr.timeSincePrev = curr.avgTimestamp - prev.avgTimestamp;
+      if (prev.avgPrice > 0) {
+        curr.pctSincePrev = ((curr.avgPrice - prev.avgPrice) / prev.avgPrice) * 100;
       }
     }
 

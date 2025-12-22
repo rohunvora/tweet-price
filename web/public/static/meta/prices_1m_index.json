@@ -3,11 +3,25 @@
   "timeframe": "1m",
   "chunks": [
     {
+      "month": "2025-10",
+      "file": "prices_1m_2025-10.json",
+      "count": 37200,
+      "start": 1759737600,
+      "end": 1761969540
+    },
+    {
+      "month": "2025-11",
+      "file": "prices_1m_2025-11.json",
+      "count": 43200,
+      "start": 1761969600,
+      "end": 1764565140
+    },
+    {
       "month": "2025-12",
       "file": "prices_1m_2025-12.json",
-      "count": 927,
-      "start": 1765422060,
-      "end": 1766343900
+      "count": 30221,
+      "start": 1764565200,
+      "end": 1766378400
     }
   ]
 }

@@ -5,6 +5,22 @@ This file documents non-obvious design decisions and past debugging sessions.
 
 ---
 
+## Future Work / TODO
+
+### Chart Gap Line Statistics (Chart.tsx)
+
+**Current state:** Gap % calculations use `avgPrice` (cluster averages) so line color matches visual direction.
+
+**Ideal state:** Tie % to actual tweet moments (boundary prices) while maintaining visual consistency.
+
+**Problem:** When using boundary prices (lastTweet → firstTweet), line color often contradicts visual direction during volatile trending markets. A cluster's lastTweet might be at a local high, while the next cluster's firstTweet is at a local low, showing negative % even though overall trend is up.
+
+**Tradeoff:** avgPrice makes % values zoom-dependent (change as clusters merge/split), but always matches visual intuition.
+
+**To revisit:** Find a hybrid approach that uses actual tweet moments but doesn't create red lines over green visual trends.
+
+---
+
 ## Critical: Things That Will Crash the Frontend
 
 ### DST Duplicate Timestamps (export_static.py)
@@ -195,6 +211,46 @@ Returns: [[timestamp, O, H, L, C], ...] at EXACT hour boundaries
 - Solana DEX tokens (use GeckoTerminal + Birdeye instead)
 - When you need 15m or 1m data (not supported)
 - Demo/free tier (irregular timestamps break charts)
+
+### CoinGecko /market_chart Returns Price Points, NOT OHLC (CRITICAL)
+
+**Symptom:** Chart shows scattered dots instead of candles on 1D view.
+
+**Root Cause:** The `/market_chart` endpoint returns **single price values**, not OHLC data.
+If you insert this data with `O=H=L=C=price`, lightweight-charts renders them as **dots**
+because there's no candle body (high=low, open=close).
+
+**Example of BAD data (all values identical = dot):**
+```
+O=0.027144 H=0.027144 L=0.027144 C=0.027144 ⚫ DOT
+```
+
+**Example of GOOD data (different OHLC = candle):**
+```
+O=0.043135 H=0.074817 L=0.017399 C=0.024064 📊 CANDLE
+```
+
+**How to diagnose:**
+```python
+# Check exported JSON for O=H=L=C dots
+dots = [c for c in candles if c['o'] == c['h'] == c['l'] == c['c']]
+print(f'Dots: {len(dots)} / {len(candles)}')
+```
+
+**Solution:**
+1. Delete the bad `/market_chart` data from database
+2. Use Birdeye backfill instead (provides real OHLC data):
+   ```bash
+   python fetch_prices.py --asset ASSET --backfill
+   ```
+3. Re-export: `python export_static.py --asset ASSET`
+
+**Prevention:** Never use CoinGecko `/market_chart` for price backfills.
+Always use Birdeye for Solana/BSC tokens, or CoinGecko `/ohlc/range` (requires Analyst plan).
+
+**Fixed in:** December 2024 after BELIEVE chart showed dots instead of candles.
+
+---
 
 **CLI usage:**
 ```bash
