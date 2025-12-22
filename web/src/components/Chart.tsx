@@ -172,10 +172,11 @@ interface ChartProps {
 interface TweetClusterDisplay {
   tweets: TweetEvent[];       // All tweets in this cluster
 
-  // Visual positioning (where to draw the bubble)
+  // Visual positioning
   x: number;                  // Screen X coordinate (drifting average)
-  y: number;                  // Screen Y coordinate (from avgPrice)
-  avgPrice: number;           // Average price of all tweets in cluster
+  y: number;                  // Screen Y coordinate (exit price - where lines LEAVE)
+  entryY: number;             // Screen Y coordinate (entry price - where lines ARRIVE)
+  avgPrice: number;           // Exit price (kept for backward compat, now = lastTweet.price)
   avgTimestamp: number;       // Average timestamp (for sorting)
   avgChange: number | null;   // Average 1h price change (for potential future use)
 
