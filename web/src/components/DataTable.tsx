@@ -9,6 +9,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   useReactTable,
   getCoreRowModel,
@@ -25,6 +26,7 @@ interface DataTableProps {
   events: TweetEvent[];
   founder: string;
   assetName: string;
+  assetId: string;  // Added for Chart navigation
   // Optional filter toggle for assets with keyword filtering
   showOnlyMentionsToggle?: boolean;
   onlyMentions?: boolean;
@@ -47,15 +49,23 @@ export default function DataTable({
   events,
   founder,
   assetName,
+  assetId,
   showOnlyMentionsToggle = false,
   onlyMentions = true,
   onOnlyMentionsChange,
 }: DataTableProps) {
+  const router = useRouter();
+  
   // Default sort: Latest first (neutral view)
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'timestamp', desc: true }
   ]);
   const [globalFilter, setGlobalFilter] = useState('');
+  
+  // Navigate to chart focused on a specific tweet timestamp
+  const navigateToChart = (timestamp: number) => {
+    router.push(`/chart?asset=${assetId}&focus=${timestamp}`);
+  };
 
   // Three columns only: Date, Tweet, Next 24H
   const columns = useMemo(() => [
@@ -115,7 +125,33 @@ export default function DataTable({
       },
       sortingFn: 'basic',
     }),
-  ], [founder]);
+    
+    // Navigation button to view on chart
+    columnHelper.display({
+      id: 'actions',
+      header: '',
+      cell: info => {
+        const timestamp = info.row.original.timestamp;
+        return (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              navigateToChart(timestamp);
+            }}
+            className="p-2 rounded-md text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
+            title="View on chart"
+          >
+            {/* Chart/pin icon */}
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 12L5.5 8.5L8 11L14 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M10 5H14V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        );
+      },
+    }),
+  ], [founder, navigateToChart]);
 
   const table = useReactTable({
     data: events,
@@ -227,25 +263,27 @@ export default function DataTable({
           const date = new Date(event.timestamp * 1000);
 
           return (
-            <a
+            <div
               key={row.id}
-              href={`https://twitter.com/${founder}/status/${event.tweet_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
               className="flex items-start gap-3 px-4 py-3 hover:bg-[var(--surface-1)] transition-colors"
             >
-              {/* Left: Tweet text + date */}
-              <div className="flex-1 min-w-0">
+              {/* Left: Tweet text + date (clickable to Twitter) */}
+              <a
+                href={`https://twitter.com/${founder}/status/${event.tweet_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 min-w-0"
+              >
                 <p className="text-sm text-[var(--text-primary)] line-clamp-2">
                   {decodedText}
                 </p>
                 <p className="text-xs text-[var(--text-muted)] mt-1">
                   {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </p>
-              </div>
+              </a>
 
-              {/* Right: % change pinned */}
-              <div className="flex-shrink-0 text-right">
+              {/* Right: % change + chart button */}
+              <div className="flex-shrink-0 flex items-center gap-2">
                 {change !== null ? (
                   <span className={`font-mono text-sm font-semibold tabular-nums ${isPositive ? 'text-[var(--positive)]' : 'text-[var(--negative)]'}`}>
                     {isPositive ? '+' : ''}{change.toFixed(1)}%
@@ -253,8 +291,19 @@ export default function DataTable({
                 ) : (
                   <span className="text-[var(--text-disabled)] text-sm">—</span>
                 )}
+                {/* Chart navigation button */}
+                <button
+                  onClick={() => navigateToChart(event.timestamp)}
+                  className="p-2 rounded-md text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
+                  title="View on chart"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M2 12L5.5 8.5L8 11L14 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M10 5H14V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
               </div>
-            </a>
+            </div>
           );
         })}
       </div>

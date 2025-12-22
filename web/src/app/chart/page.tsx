@@ -98,6 +98,10 @@ function ChartPageContent() {
 
   // Get asset ID from URL, default to 'pump'
   const assetId = searchParams.get('asset') || 'pump';
+  
+  // Get focus timestamp from URL (for Data Table → Chart navigation)
+  const focusParam = searchParams.get('focus');
+  const focusTimestamp = focusParam ? parseInt(focusParam, 10) : undefined;
 
   // Load assets on mount
   useEffect(() => {
@@ -253,7 +257,12 @@ function ChartPageContent() {
 
       {/* Chart area */}
       <div className="flex-1 relative">
-        <Chart key={selectedAsset.id} tweetEvents={tweetEvents} asset={selectedAsset} />
+        <Chart 
+          key={selectedAsset.id} 
+          tweetEvents={tweetEvents} 
+          asset={selectedAsset} 
+          focusTimestamp={focusTimestamp}
+        />
       </div>
 
       {/* Bottom bar - hidden on mobile (info is in bottom sheet) */}

@@ -225,6 +225,7 @@ function DataPageContent() {
             events={tweetEvents}
             founder={selectedAsset.founder}
             assetName={selectedAsset.name}
+            assetId={selectedAsset.id}
             showOnlyMentionsToggle={hasFilteredTweets}
             onlyMentions={onlyMentions}
             onOnlyMentionsChange={handleOnlyMentionsToggle}

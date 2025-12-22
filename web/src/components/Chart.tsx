@@ -53,6 +53,7 @@ import {
 import { Timeframe, TweetEvent, Candle, Asset } from '@/lib/types';
 import { loadPrices, toCandlestickData, getSortedTweetTimestamps } from '@/lib/dataLoader';
 import { formatTimeGap, formatPctChange } from '@/lib/formatters';
+import ClusterDrawer from './ClusterDrawer';
 
 
 // =============================================================================
@@ -154,6 +155,7 @@ const TIMEFRAMES: { label: string; value: Timeframe }[] = [
 interface ChartProps {
   tweetEvents: TweetEvent[];  // All tweets for this asset (pre-sorted by timestamp)
   asset: Asset;               // Asset metadata (id, name, founder, color)
+  focusTimestamp?: number;    // Optional: zoom to this timestamp on mount (from Data Table navigation)
 }
 
 /**
@@ -252,7 +254,7 @@ interface TweetClusterDisplay {
  * @param tweetEvents - All tweets for this asset, with price data attached
  * @param asset - Asset metadata including founder info and theme color
  */
-export default function Chart({ tweetEvents, asset }: ChartProps) {
+export default function Chart({ tweetEvents, asset, focusTimestamp }: ChartProps) {
 
   // ===========================================================================
   // REFS - Mutable values that persist across renders
@@ -267,6 +269,9 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);      // Chart container div
   const markersCanvasRef = useRef<HTMLCanvasElement | null>(null);  // Overlay canvas for markers
   const avatarRef = useRef<HTMLImageElement | null>(null);  // Cached founder avatar image
+  
+  // Focus navigation ref - track if we've handled the focusTimestamp
+  const focusHandledRef = useRef(false);
 
   // Lightweight-charts refs
   const chartRef = useRef<IChartApi | null>(null);        // Chart instance
@@ -302,6 +307,9 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   const [availableTimeframes, setAvailableTimeframes] = useState<Set<Timeframe>>(new Set(['1d']));  // Which TFs have data
   const [noData, setNoData] = useState(false);            // No data available for current TF
   const [containerWidth, setContainerWidth] = useState(800);  // For tooltip positioning
+  
+  // Drawer state - tweets to show in the cluster drawer (null = closed)
+  const [drawerTweets, setDrawerTweets] = useState<TweetEvent[] | null>(null);
 
   // ===========================================================================
   // REF SYNC EFFECTS - Keep refs in sync with props/state
@@ -1115,15 +1123,10 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
 
       for (const cluster of clustersRef.current) {
         if (Math.hypot(cluster.x - x, cluster.y - y) < CLICK_RADIUS) {
-          if (cluster.tweets.length > 1) {
-            // Multi-tweet cluster: zoom in to show individual tweets
-            zoomToClusterRef.current?.(cluster);
-          } else {
-            // Single tweet: show tooltip (useful for mobile where hover doesn't work)
-            const tweet = cluster.tweets[0];
-            setHoveredTweet(tweet);
-            setTooltipPos({ x: cluster.x, y: cluster.y });
-          }
+          // Open drawer to show tweets in this cluster
+          // Works for both single tweets and multi-tweet clusters
+          setDrawerTweets(cluster.tweets);
+          setHoveredTweet(null);  // Clear any hover tooltip
           return;
         }
       }
@@ -1349,6 +1352,57 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
       return () => clearTimeout(timer);
     }
   }, [dataLoaded, showBubbles, hoveredTweet, avatarLoaded, drawMarkers]);
+
+  // ===========================================================================
+  // FOCUS NAVIGATION - Zoom to specific timestamp (from Data Table click)
+  // ===========================================================================
+  //
+  // When the user clicks a tweet in the Data Table, we navigate to the chart
+  // with a focusTimestamp. This effect zooms the chart to that timestamp.
+  //
+  // On daily timeframe, automatically switch to hourly for better detail.
+  // This follows the same pattern as zoomToCluster for consistent UX.
+  //
+  // ===========================================================================
+  useEffect(() => {
+    if (!focusTimestamp || !dataLoaded || !chartRef.current || focusHandledRef.current) {
+      return;
+    }
+    
+    // Mark as handled so we don't re-zoom on every render
+    focusHandledRef.current = true;
+    
+    // Calculate a sensible range around the focus timestamp
+    // Show 3 days before and 3 days after (or adjust based on timeframe)
+    const padding = timeframe === '1d' ? 3 * 86400 : 
+                   timeframe === '1h' ? 12 * 3600 : 
+                   timeframe === '15m' ? 3 * 3600 : 
+                   1 * 3600;  // 1m
+    
+    const targetFrom = focusTimestamp - padding;
+    const targetTo = focusTimestamp + padding;
+    
+    // On daily timeframe, switch to hourly for better detail
+    // (Daily candles can't show intra-day price movement)
+    if (timeframe === '1d' && availableTimeframes.has('1h')) {
+      pendingZoomRef.current = { from: targetFrom, to: targetTo };
+      setTimeframe('1h');
+      console.log(`[Chart] Switching to 1h for focus navigation: ${new Date(focusTimestamp * 1000).toISOString()}`);
+      return;
+    }
+    
+    // Use animateToRange for smooth zoom
+    requestAnimationFrame(() => {
+      animateToRangeRef.current?.(targetFrom, targetTo);
+    });
+    
+    console.log(`[Chart] Focused on timestamp: ${new Date(focusTimestamp * 1000).toISOString()}`);
+  }, [focusTimestamp, dataLoaded, timeframe, availableTimeframes]);
+
+  // Reset focus handled when focusTimestamp changes
+  useEffect(() => {
+    focusHandledRef.current = false;
+  }, [focusTimestamp]);
 
   // ===========================================================================
   // NAVIGATION HANDLERS - Quick navigation buttons
@@ -1746,6 +1800,39 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
           {/* Touch hint - only show on touch devices */}
           <div className="mt-2 text-xs md:hidden" style={{ color: asset.color }}>Tap to dismiss</div>
         </div>
+      )}
+
+      {/* Cluster drawer - shows tweets when clicking a cluster */}
+      {drawerTweets && (
+        <ClusterDrawer
+          tweets={drawerTweets}
+          onClose={() => setDrawerTweets(null)}
+          onNavigate={(timestamp) => {
+            // Close drawer and zoom to the specific tweet
+            setDrawerTweets(null);
+            
+            // Calculate a sensible range around the focus timestamp
+            const padding = timeframe === '1d' ? 3 * 86400 : 
+                           timeframe === '1h' ? 12 * 3600 : 
+                           timeframe === '15m' ? 3 * 3600 : 
+                           1 * 3600;
+            
+            const targetFrom = timestamp - padding;
+            const targetTo = timestamp + padding;
+            
+            // On daily timeframe, switch to hourly for better detail
+            // (Daily candles can't show intra-day price movement)
+            if (timeframe === '1d' && availableTimeframes.has('1h')) {
+              pendingZoomRef.current = { from: targetFrom, to: targetTo };
+              setTimeframe('1h');
+              return;
+            }
+            
+            animateToRangeRef.current?.(targetFrom, targetTo);
+          }}
+          founder={asset.founder}
+          assetColor={asset.color}
+        />
       )}
     </div>
   );
