@@ -791,13 +791,17 @@ def get_tweet_events(
                           Used to export all tweets for "Only mentions" toggle
     """
     # Load circulating supply from assets.json for market cap calculation
+    # Also load supply_unstable flag to skip market cap for tokens with changing supply
     supply_by_asset = {}
+    supply_unstable = set()
     try:
         with open(ASSETS_FILE) as f:
             assets_data = json.load(f)
             for asset in assets_data.get("assets", []):
                 if "circulating_supply" in asset:
                     supply_by_asset[asset["id"]] = asset["circulating_supply"]
+                if asset.get("supply_unstable"):
+                    supply_unstable.add(asset["id"])
     except Exception:
         pass  # If assets.json not available, market_cap will be None
 
@@ -840,10 +844,11 @@ def get_tweet_events(
 
         # Calculate market cap at tweet time
         # market_cap = price × circulating_supply
+        # Skip for assets with supply_unstable flag (e.g., JUP, WLD have vesting unlocks)
         event_asset_id = r[1]
         supply = supply_by_asset.get(event_asset_id)
         market_cap_at_tweet = None
-        if price_at and supply:
+        if price_at and supply and event_asset_id not in supply_unstable:
             market_cap_at_tweet = round(price_at * supply, 2)
 
         events.append({
