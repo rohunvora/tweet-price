@@ -264,6 +264,10 @@ try:
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
+    # Define placeholder types for type hints when playwright not installed
+    Page = Any
+    Browser = Any
+    BrowserContext = Any
 
 
 # =============================================================================
