@@ -256,8 +256,8 @@ function ChartPageContent() {
         <Chart key={selectedAsset.id} tweetEvents={tweetEvents} asset={selectedAsset} />
       </div>
 
-      {/* Bottom bar - hidden on mobile (info is in bottom sheet) */}
-      <div className="hidden md:flex h-9 bg-[var(--surface-1)] border-t border-[var(--border-subtle)] items-center px-4 justify-between">
+      {/* Bottom bar - visible on all devices */}
+      <div className="flex flex-col md:flex-row h-auto md:h-9 bg-[var(--surface-1)] border-t border-[var(--border-subtle)] px-4 py-2 md:py-0 md:items-center justify-between gap-2 md:gap-0">
         <div className="flex items-center gap-4">
           <a
             href={`https://twitter.com/${selectedAsset.founder}`}

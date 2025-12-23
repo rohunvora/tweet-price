@@ -435,6 +435,8 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.clearRect(0, 0, width, height);
 
     // -------------------------------------------------------------------------
@@ -1640,9 +1642,9 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
         Drag to pan • Scroll to zoom
       </span>
       
-      {/* Legend - desktop only */}
+      {/* Legend - visible on all devices */}
       {showBubbles && (
-        <div className="absolute bottom-14 md:bottom-2 right-2 z-20 hidden md:flex items-center gap-3 bg-[var(--surface-1)]/90 px-3 py-1.5 rounded text-[10px]">
+        <div className="absolute bottom-32 md:bottom-2 right-2 z-20 flex items-center gap-2 md:gap-3 bg-[var(--surface-1)]/90 px-2 md:px-3 py-1.5 rounded text-[9px] md:text-[10px]">
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-full border border-white/50 bg-transparent" />
             <span className="text-[var(--text-secondary)]">1 tweet</span>

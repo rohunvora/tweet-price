@@ -261,7 +261,9 @@ export default function DataTable({
 
       {/* Row count */}
       <div className="px-4 py-3 text-xs text-[var(--text-muted)] border-t border-[var(--border-subtle)]">
-        {rows.length} of {events.length} tweets
+        {rows.length === 0 && globalFilter
+          ? 'No tweets match your search'
+          : `${rows.length} of ${events.length} tweets`}
       </div>
     </div>
   );
