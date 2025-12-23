@@ -286,7 +286,8 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   const pendingZoomRef = useRef<{from: number, to: number} | null>(null);  // Zoom target after TF switch
   const bubbleAnimRef = useRef<{start: number, active: boolean}>({start: 0, active: false});  // Entrance animation state
   const zoomToClusterRef = useRef<((cluster: TweetClusterDisplay) => void) | null>(null);  // Zoom function ref
-  const animateToRangeRef = useRef<((from: number, to: number) => void) | null>(null);  // Animate function ref
+  // FIX: Updated type to include optional start position parameters for the zoom bug fix
+  const animateToRangeRef = useRef<((targetFrom: number, targetTo: number, startFrom?: number, startTo?: number) => void) | null>(null);  // Animate function ref
 
   // ===========================================================================
   // STATE - Values that trigger re-renders when changed
@@ -1049,6 +1050,12 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
     // -------------------------------------------------------------------------
     // Redraw markers whenever the visible time range changes. Also cancels any
     // pending zoom animation if user manually interacts with the chart.
+    //
+    // IMPORTANT: This callback also fires when setData() is called (because
+    // setData resets the visible range). This means pendingZoomRef gets cleared
+    // during data loads. To work around this, the data loading effect captures
+    // pendingZoomRef.current BEFORE calling setData() and uses that captured
+    // value for zoom animations.
     // -------------------------------------------------------------------------
     chart.timeScale().subscribeVisibleTimeRangeChange(() => {
       pendingZoomRef.current = null;
@@ -1223,32 +1230,46 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
 
         if (seriesRef.current && chartRef.current) {
           // -----------------------------------------------------------------------
-          // CRITICAL: Capture previous range BEFORE setData clears it
+          // CRITICAL: Capture previousRange and pendingZoom BEFORE setData
           // -----------------------------------------------------------------------
-          // setData() resets the chart's internal state. If we want to preserve
-          // the user's position (e.g., they were looking at a specific date range),
-          // we need to capture that range before the reset and restore it after.
+          // setData() triggers subscribeVisibleTimeRangeChange callback, which
+          // clears pendingZoomRef. We must capture the pending zoom target BEFORE
+          // calling setData, otherwise it will be lost.
+          //
+          // Similarly, setData resets the chart's internal visible range, so we
+          // capture it here to preserve the user's position or animate from it.
           // -----------------------------------------------------------------------
           const previousRange = chartRef.current.timeScale().getVisibleRange();
+          const pendingZoom = pendingZoomRef.current;  // FIX: Capture BEFORE setData clears it
 
           const chartData = toCandlestickData(priceData);
           seriesRef.current.setData(chartData as CandlestickData<Time>[]);
 
-          if (pendingZoomRef.current) {
+          if (pendingZoom) {
             // -----------------------------------------------------------------------
             // SCENARIO A: Cluster Click Zoom
             // -----------------------------------------------------------------------
             // User clicked a multi-tweet cluster. We switched timeframes and set
             // pendingZoomRef with the target range. Now animate to that range.
+            // Note: We use the captured `pendingZoom` variable because setData()
+            // triggers subscribeVisibleTimeRangeChange which clears pendingZoomRef.
             // -----------------------------------------------------------------------
-            const { from, to } = pendingZoomRef.current;
-            pendingZoomRef.current = null;
+            const { from, to } = pendingZoom;
+            pendingZoomRef.current = null;  // Clear explicitly (may already be null)
 
             // RAF lets chart finish internal layout after setData
             requestAnimationFrame(() => {
               if (previousRange && animateToRangeRef.current) {
-                // Smooth animation from previous position to target
-                animateToRangeRef.current(from, to);
+                // Pass previousRange as the animation start position.
+                // This is critical because setData() resets the chart's internal
+                // visible range, so calling getVisibleRange() after reset would
+                // return the wrong position (causing the "teleport to random time" bug).
+                animateToRangeRef.current(
+                  from,
+                  to,
+                  previousRange.from as number,
+                  previousRange.to as number
+                );
               } else {
                 // No previous position (shouldn't happen), set directly
                 chartRef.current?.timeScale().setVisibleRange({
@@ -1415,30 +1436,56 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   // ===========================================================================
 
   /**
-   * Smoothly animate from current visible range to target range.
+   * Smoothly animate from a start range to a target range.
    * Uses ease-out cubic easing (fast start, slow finish).
+   *
+   * IMPORTANT: When animating after a timeframe switch (e.g., 1D -> 1H), the chart's
+   * internal visible range is reset by setData(). If we read getVisibleRange() after
+   * this reset, we get the WRONG starting position. To fix this, callers can pass
+   * the pre-reset range via startFrom/startTo.
    *
    * @param targetFrom - Target start timestamp (seconds)
    * @param targetTo - Target end timestamp (seconds)
+   * @param startFrom - Optional: Override start position (use when chart was just reset)
+   * @param startTo - Optional: Override start position (use when chart was just reset)
    */
-  const animateToRange = useCallback((targetFrom: number, targetTo: number) => {
+  const animateToRange = useCallback((
+    targetFrom: number,
+    targetTo: number,
+    startFrom?: number,  // FIX: Allow callers to pass the pre-reset start position
+    startTo?: number     // FIX: This fixes the "teleport to wrong time" bug
+  ) => {
     const chart = chartRef.current;
     if (!chart) return;
-    const start = chart.timeScale().getVisibleRange();
-    if (!start) {
-      chart.timeScale().setVisibleRange({ from: targetFrom as Time, to: targetTo as Time });
-      return;
+
+    // FIX: Use caller-provided start position if available, otherwise read from chart.
+    // After setData(), getVisibleRange() returns the chart's default/reset position,
+    // not the user's previous view. This caused the "zoom to cluster teleports to
+    // random time" bug on WIF and other long-history assets.
+    let start: { from: number; to: number };
+    if (startFrom !== undefined && startTo !== undefined) {
+      // Caller provided explicit start position (preferred after TF switch)
+      start = { from: startFrom, to: startTo };
+    } else {
+      // Fallback: read from chart (OK if chart wasn't just reset)
+      const chartRange = chart.timeScale().getVisibleRange();
+      if (!chartRange) {
+        // No range available, just set directly without animation
+        chart.timeScale().setVisibleRange({ from: targetFrom as Time, to: targetTo as Time });
+        return;
+      }
+      start = { from: chartRange.from as number, to: chartRange.to as number };
     }
-    
+
     const duration = 300;
     const t0 = performance.now();
-    
+
     (function tick() {
       const t = Math.min((performance.now() - t0) / duration, 1);
       const e = 1 - (1 - t) ** 3; // ease-out cubic
       chart.timeScale().setVisibleRange({
-        from: ((start.from as number) + (targetFrom - (start.from as number)) * e) as Time,
-        to: ((start.to as number) + (targetTo - (start.to as number)) * e) as Time,
+        from: (start.from + (targetFrom - start.from) * e) as Time,
+        to: (start.to + (targetTo - start.to) * e) as Time,
       });
       if (t < 1) requestAnimationFrame(tick);
     })();
