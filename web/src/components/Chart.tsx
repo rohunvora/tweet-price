@@ -73,6 +73,15 @@ import { formatTimeGap, formatPctChange } from '@/lib/formatters';
 const SILENCE_GAP_THRESHOLD = 24 * 60 * 60; // 24 hours in seconds
 
 /**
+ * Context window for "First Tweet" and "Last Tweet" navigation buttons.
+ *
+ * Why 7 days: Enough time to see immediate price reaction to a tweet,
+ * while staying zoomed in enough to read individual tweet markers.
+ * A week captures most short-term momentum without overwhelming detail.
+ */
+const NAVIGATION_CONTEXT_DAYS = 7;
+
+/**
  * Chart theme colors - Premium dark theme
  * Derived from reference designs (Crypto Dashboard, Parlay Banditz)
  * Candlestick colors are intentionally muted (60-80% opacity) so tweet
@@ -1378,25 +1387,48 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
   // ===========================================================================
   //
   // These provide shortcuts for common navigation patterns:
-  // - jumpToLastTweet: Focus on the most recent activity
-  // - jumpToAllTime: See the full price history
+  // - jumpToFirstTweet: Focus on the earliest activity (start of timeline)
+  // - jumpToLastTweet: Focus on the most recent activity (end of timeline)
+  // - jumpToAllTime: See the full price history (overview)
   //
   // ===========================================================================
 
   /**
-   * Jump to view the most recent tweet with 7 days of context.
+   * Jump to view the first tweet with context after it.
+   * Shows what happened in the days following the first tweet.
+   */
+  const jumpToFirstTweet = useCallback(() => {
+    if (!chartRef.current || tweetEvents.length === 0) return;
+
+    const tweetsWithPrice = tweetEvents.filter(t => t.price_at_tweet !== null);
+    if (tweetsWithPrice.length === 0) return;
+
+    const firstTweet = tweetsWithPrice[0];
+    const oneDaySeconds = 24 * 60 * 60;
+    const from = firstTweet.timestamp - oneDaySeconds; // 1 day before (padding)
+    const to = firstTweet.timestamp + (NAVIGATION_CONTEXT_DAYS * oneDaySeconds);
+
+    chartRef.current.timeScale().setVisibleRange({
+      from: from as Time,
+      to: to as Time,
+    });
+  }, [tweetEvents]);
+
+  /**
+   * Jump to view the most recent tweet with context before it.
    * Shows the last tweet on the left with current price on the right.
    */
   const jumpToLastTweet = useCallback(() => {
     if (!chartRef.current || tweetEvents.length === 0) return;
-    
+
     const tweetsWithPrice = tweetEvents.filter(t => t.price_at_tweet !== null);
     if (tweetsWithPrice.length === 0) return;
-    
+
     const lastTweet = tweetsWithPrice[tweetsWithPrice.length - 1];
     const now = Math.floor(Date.now() / 1000);
-    const from = lastTweet.timestamp - (7 * 24 * 60 * 60);
-    
+    const oneDaySeconds = 24 * 60 * 60;
+    const from = lastTweet.timestamp - (NAVIGATION_CONTEXT_DAYS * oneDaySeconds);
+
     chartRef.current.timeScale().setVisibleRange({
       from: from as Time,
       to: now as Time,
@@ -1636,16 +1668,22 @@ export default function Chart({ tweetEvents, asset }: ChartProps) {
 
         <div className="flex items-center gap-1 ml-2">
           <button
-            onClick={jumpToLastTweet}
+            onClick={jumpToFirstTweet}
             className="px-3 py-2 min-h-[44px] text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
           >
-            Last Tweet
+            First Tweet
           </button>
           <button
             onClick={jumpToAllTime}
             className="px-3 py-2 min-h-[44px] text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
           >
             All Time
+          </button>
+          <button
+            onClick={jumpToLastTweet}
+            className="px-3 py-2 min-h-[44px] text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
+          >
+            Last Tweet
           </button>
         </div>
       </div>
