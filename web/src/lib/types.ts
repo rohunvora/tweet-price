@@ -36,6 +36,8 @@ export interface TweetEvent {
   price_24h: number | null;
   change_1h_pct: number | null;
   change_24h_pct: number | null;
+  /** Market cap at tweet time (price × circulating supply) */
+  market_cap_at_tweet: number | null;
   likes: number;
   retweets: number;
   impressions: number;

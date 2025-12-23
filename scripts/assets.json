@@ -16,7 +16,8 @@
       "color": "#9945FF",
       "enabled": true,
       "logo": "/logos/pump.png",
-      "keyword_filter": "pump"
+      "keyword_filter": "pump",
+      "circulating_supply": 999989252038
     },
     {
       "id": "hype",
@@ -34,7 +35,11 @@
       "logo": "/logos/hype.png",
       "keyword_filter": "hype,hyperliquid",
       "data_note": "15m data unavailable - CoinGecko only supports 1h/1d, Hyperliquid API doesn't retain historical 15m",
-      "skip_timeframes": ["15m", "1m"]
+      "skip_timeframes": [
+        "15m",
+        "1m"
+      ],
+      "circulating_supply": 238451857
     },
     {
       "id": "aster",
@@ -51,7 +56,8 @@
       "enabled": true,
       "logo": "/logos/aster.png",
       "data_note": "Sept 17-18 hourly prices reconstructed from DexScreener charts (API historical data unavailable)",
-      "keyword_filter": "aster"
+      "keyword_filter": "aster",
+      "circulating_supply": 8000000000
     },
     {
       "id": "believe",
@@ -67,7 +73,8 @@
       "color": "#FF6B6B",
       "enabled": true,
       "logo": "/logos/believe.png",
-      "keyword_filter": "launchcoin,believe"
+      "keyword_filter": "launchcoin,believe",
+      "circulating_supply": 999824929
     },
     {
       "id": "jup",
@@ -84,7 +91,11 @@
       "enabled": true,
       "logo": "/logos/jup.png",
       "keyword_filter": "jup,jupiter",
-      "skip_timeframes": ["15m", "1m"]
+      "skip_timeframes": [
+        "15m",
+        "1m"
+      ],
+      "circulating_supply": 6863986034
     },
     {
       "id": "monad",
@@ -100,7 +111,8 @@
       "color": "#836EF9",
       "enabled": true,
       "logo": "/logos/monad.png",
-      "keyword_filter": "mon,monad"
+      "keyword_filter": "mon,monad",
+      "circulating_supply": 10830583396
     },
     {
       "id": "useless",
@@ -118,7 +130,8 @@
       "enabled": true,
       "logo": "/logos/useless.png",
       "keyword_filter": "useless",
-      "tweet_filter_note": "Only tweets mentioning $USELESS"
+      "tweet_filter_note": "Only tweets mentioning $USELESS",
+      "circulating_supply": 999090146
     },
     {
       "id": "zora",
@@ -134,7 +147,8 @@
       "color": "#5B5BD6",
       "enabled": true,
       "logo": "/logos/zora.png",
-      "keyword_filter": "zora"
+      "keyword_filter": "zora",
+      "circulating_supply": 10000000000
     },
     {
       "id": "meta",
@@ -150,7 +164,8 @@
       "color": "#3B82F6",
       "enabled": true,
       "logo": "/logos/meta.png",
-      "keyword_filter": "meta"
+      "keyword_filter": "meta",
+      "circulating_supply": 22142658
     },
     {
       "id": "wif",
@@ -168,7 +183,8 @@
       "enabled": true,
       "logo": "/logos/wif.png",
       "keyword_filter": "wif",
-      "tweet_filter_note": "Only tweets mentioning $WIF"
+      "tweet_filter_note": "Only tweets mentioning $WIF",
+      "circulating_supply": 998839633
     },
     {
       "id": "xpl",
@@ -184,7 +200,8 @@
       "color": "#7B3FE4",
       "enabled": true,
       "logo": "/logos/xpl.png",
-      "keyword_filter": "xpl,plasma"
+      "keyword_filter": "xpl,plasma",
+      "circulating_supply": 114870603
     },
     {
       "id": "fartcoin",
@@ -202,7 +219,8 @@
       "enabled": true,
       "logo": "/logos/fartcoin.png",
       "keyword_filter": "fartcoin",
-      "tweet_filter_note": "Only tweets mentioning $FARTCOIN"
+      "tweet_filter_note": "Only tweets mentioning $FARTCOIN",
+      "circulating_supply": 999979721
     },
     {
       "id": "wld",
@@ -221,7 +239,11 @@
       "logo": "/logos/wld.png",
       "keyword_filter": "worldcoin,wld,world coin,world id",
       "tweet_filter_note": "Only tweets mentioning Worldcoin/WLD",
-      "skip_timeframes": ["15m", "1m"]
+      "skip_timeframes": [
+        "15m",
+        "1m"
+      ],
+      "circulating_supply": 10000000000
     }
   ]
 }

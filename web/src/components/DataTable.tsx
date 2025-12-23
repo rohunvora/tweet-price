@@ -1,17 +1,18 @@
 'use client';
 
 /**
- * DataTable - Tweet Table with Price Context
- * ===========================================
- * Four columns: Date, Tweet (full text), Price, Next 24H
+ * DataTable - Tweet Table with Price & Market Cap Context
+ * =======================================================
+ * Five columns: Date, Tweet (full text), Price, Market Cap, Next 24H
  *
  * Design rationale:
  * - Users come here to READ tweets, not glance at truncated snippets
  * - price_at_tweet gives context to percentages ("+48.9% @ $0.02" is meaningful)
+ * - market_cap_at_tweet shows absolute scale ("$47M" is more intuitive than "$0.0047")
  * - Full tweet text avoids forcing click-through to Twitter
  *
  * Default sort: Latest first (neutral, not cherry-picked)
- * Mobile: Stacked cards with price + % pinned right
+ * Mobile: Stacked cards with market cap + % pinned right
  */
 
 import { useMemo, useState } from 'react';
@@ -49,6 +50,17 @@ function decodeHtmlEntities(text: string): string {
   return textarea.value;
 }
 
+/**
+ * Format market cap in human-readable form ($47M, $1.2B, etc.)
+ */
+function formatMarketCap(mc: number | null): string {
+  if (mc === null) return '—';
+  if (mc >= 1_000_000_000) return `$${(mc / 1_000_000_000).toFixed(1)}B`;
+  if (mc >= 1_000_000) return `$${(mc / 1_000_000).toFixed(1)}M`;
+  if (mc >= 1_000) return `$${(mc / 1_000).toFixed(1)}K`;
+  return `$${mc.toFixed(0)}`;
+}
+
 export default function DataTable({
   events,
   founder,
@@ -63,7 +75,7 @@ export default function DataTable({
   ]);
   const [globalFilter, setGlobalFilter] = useState('');
 
-  // Four columns: Date, Tweet, Price, Next 24H
+  // Five columns: Date, Tweet, Price, Market Cap, Next 24H
   const columns = useMemo(() => [
     columnHelper.accessor('timestamp', {
       header: 'DATE',
@@ -114,6 +126,20 @@ export default function DataTable({
         return (
           <span className="text-[var(--text-secondary)] tabular-nums text-sm whitespace-nowrap">
             ${formatted}
+          </span>
+        );
+      },
+      sortingFn: 'basic',
+    }),
+
+    columnHelper.accessor('market_cap_at_tweet', {
+      header: 'MCAP',
+      cell: info => {
+        const mc = info.getValue();
+        if (mc === null) return <span className="text-[var(--text-disabled)]">—</span>;
+        return (
+          <span className="text-[var(--text-secondary)] tabular-nums text-sm whitespace-nowrap">
+            {formatMarketCap(mc)}
           </span>
         );
       },
@@ -178,7 +204,9 @@ export default function DataTable({
                 ? (sorting[0]?.desc ? 'latest' : 'oldest')
                 : sorting[0]?.id === 'price_at_tweet'
                   ? (sorting[0]?.desc ? 'highest-price' : 'lowest-price')
-                  : (sorting[0]?.desc ? 'biggest-gain' : 'biggest-drop')
+                  : sorting[0]?.id === 'market_cap_at_tweet'
+                    ? (sorting[0]?.desc ? 'highest-mcap' : 'lowest-mcap')
+                    : (sorting[0]?.desc ? 'biggest-gain' : 'biggest-drop')
             }
             onChange={(e) => {
               const val = e.target.value;
@@ -188,6 +216,8 @@ export default function DataTable({
               else if (val === 'biggest-drop') setSorting([{ id: 'change_24h_pct', desc: false }]);
               else if (val === 'highest-price') setSorting([{ id: 'price_at_tweet', desc: true }]);
               else if (val === 'lowest-price') setSorting([{ id: 'price_at_tweet', desc: false }]);
+              else if (val === 'highest-mcap') setSorting([{ id: 'market_cap_at_tweet', desc: true }]);
+              else if (val === 'lowest-mcap') setSorting([{ id: 'market_cap_at_tweet', desc: false }]);
             }}
             className="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none focus:border-[var(--accent)] min-h-[44px]"
           >
@@ -195,8 +225,8 @@ export default function DataTable({
             <option value="oldest">Oldest</option>
             <option value="biggest-gain">Biggest gain</option>
             <option value="biggest-drop">Biggest drop</option>
-            <option value="highest-price">Highest price</option>
-            <option value="lowest-price">Lowest price</option>
+            <option value="highest-mcap">Highest mcap</option>
+            <option value="lowest-mcap">Lowest mcap</option>
           </select>
         </div>
 
@@ -273,12 +303,12 @@ export default function DataTable({
                 </p>
               </div>
 
-              {/* Right: Price + % change stacked */}
+              {/* Right: Market cap + % change stacked */}
               <div className="flex-shrink-0 text-right">
-                {/* Price at tweet */}
-                {event.price_at_tweet !== null && (
+                {/* Market cap at tweet (more intuitive than price) */}
+                {event.market_cap_at_tweet !== null && (
                   <p className="text-xs text-[var(--text-muted)] tabular-nums">
-                    ${event.price_at_tweet < 0.01 ? event.price_at_tweet.toPrecision(2) : event.price_at_tweet.toFixed(2)}
+                    {formatMarketCap(event.market_cap_at_tweet)}
                   </p>
                 )}
                 {/* % change */}
@@ -306,11 +336,12 @@ export default function DataTable({
 }
 
 function exportToCSV(events: TweetEvent[], founder: string, assetName: string) {
-  const headers = ['Date', 'Tweet', 'Price', 'Change 24h %', 'Tweet URL'];
+  const headers = ['Date', 'Tweet', 'Price', 'Market Cap', 'Change 24h %', 'Tweet URL'];
   const rows = events.map(e => [
     new Date(e.timestamp * 1000).toISOString(),
     `"${e.text.replace(/"/g, '""')}"`,
     e.price_at_tweet?.toFixed(6) ?? '',
+    e.market_cap_at_tweet?.toFixed(0) ?? '',
     e.change_24h_pct?.toFixed(2) ?? '',
     `https://twitter.com/${founder}/status/${e.tweet_id}`
   ]);

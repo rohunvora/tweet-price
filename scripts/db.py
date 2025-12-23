@@ -790,6 +790,17 @@ def get_tweet_events(
         include_filtered: If True, include tweets marked as filtered (is_filtered=TRUE)
                           Used to export all tweets for "Only mentions" toggle
     """
+    # Load circulating supply from assets.json for market cap calculation
+    supply_by_asset = {}
+    try:
+        with open(ASSETS_FILE) as f:
+            assets_data = json.load(f)
+            for asset in assets_data.get("assets", []):
+                if "circulating_supply" in asset:
+                    supply_by_asset[asset["id"]] = asset["circulating_supply"]
+    except Exception:
+        pass  # If assets.json not available, market_cap will be None
+
     # If include_filtered, we need a custom query since the views exclude filtered tweets
     if include_filtered:
         results = _get_tweet_events_all(conn, asset_id, use_daily_fallback)
@@ -826,10 +837,18 @@ def get_tweet_events(
             change_1h = round((price_1h - price_at) / price_at * 100, 2)
         if price_at and price_24h:
             change_24h = round((price_24h - price_at) / price_at * 100, 2)
-        
+
+        # Calculate market cap at tweet time
+        # market_cap = price × circulating_supply
+        event_asset_id = r[1]
+        supply = supply_by_asset.get(event_asset_id)
+        market_cap_at_tweet = None
+        if price_at and supply:
+            market_cap_at_tweet = round(price_at * supply, 2)
+
         events.append({
             "tweet_id": r[0],
-            "asset_id": r[1],
+            "asset_id": event_asset_id,
             "asset_name": r[2],
             "founder": r[3],
             "asset_color": r[4],
@@ -845,6 +864,7 @@ def get_tweet_events(
             "price_24h": price_24h,
             "change_1h_pct": change_1h,
             "change_24h_pct": change_24h,
+            "market_cap_at_tweet": market_cap_at_tweet,
         })
     
     return events
